@@ -25,6 +25,8 @@ export type StepOptions<TInput> = {
   retryDelayMs?: number;
   /** Maximum time in milliseconds for the step execution. */
   timeoutMs?: number;
+
+  jitter?: boolean;
   /** Compensation function executed if the flow fails in a subsequent step. */
   compensate?: (ctx: FlowContext<TInput>) => Promise<void> | void;
 }

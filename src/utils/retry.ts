@@ -14,6 +14,7 @@ type RetryOptions = {
    * 'exponential': Exponential increase (retryDelayMs * 2^attempt).
    */
   backoffFactor?: 'fixed' | 'linear' | 'exponential';
+  jitter?: boolean;
 };
 
 /**
@@ -55,7 +56,7 @@ export async function runWithRetry<T>(
 
       if (attempt < options.retries && options.retryDelayMs > 0) {
         await new Promise((resolve) =>
-          setTimeout(resolve, multiplierExpression)
+          setTimeout(resolve, options.jitter ? Math.random() * multiplierExpression : multiplierExpression)
         );
       }
     }
