@@ -2,21 +2,21 @@ import {IdempotencyRecord, IdempotencyStore} from "../types";
 import {IdempotencyRecordNotFoundError} from "../errors";
 
 /**
- * Cria uma implementação em memória do armazenamento de idempotência.
- * @returns Uma instância de IdempotencyStore.
+ * Creates an in-memory implementation of the idempotency store.
+ * @returns An instance of IdempotencyStore.
  */
 export function createIdempotencyStore(): IdempotencyStore {
   const records: Map<string, IdempotencyRecord> = new Map();
 
   /**
-   * Verifica se um registro expirou.
+   * Checks if a record has expired.
    */
   function isExpired(record: IdempotencyRecord): boolean {
     return record.expiresAt !== undefined && Date.now() > record.expiresAt;
   }
 
   /**
-   * Remove um registro se ele estiver expirado.
+   * Removes a record if it is expired.
    */
   function removeExpired(key: string): void {
     const record = records.get(key);
@@ -27,7 +27,7 @@ export function createIdempotencyStore(): IdempotencyStore {
 
   return {
     /**
-     * Remove todos os registros expirados do armazenamento.
+     * Removes all expired records from the store.
      */
     async cleanup() {
       for (const [key, record] of records.entries()) {
@@ -38,7 +38,7 @@ export function createIdempotencyStore(): IdempotencyStore {
     },
 
     /**
-     * Obtém um registro pela chave, removendo-o se estiver expirado.
+     * Gets a record by key, removing it if it is expired.
      */
     async get<T = unknown>(key: string): Promise<IdempotencyRecord<T> | null> {
       removeExpired(key);
@@ -49,10 +49,10 @@ export function createIdempotencyStore(): IdempotencyStore {
     },
 
     /**
-     * Tenta iniciar uma operação idempotente.
+     * Attempts to start an idempotent operation.
      */
     async start(key: string, options?: { ttlMs?: number }): Promise<{ acquired: boolean; record: IdempotencyRecord }> {
-      // Remove registros expirados de forma síncrona para evitar race conditions
+      // Remove expired records synchronously to avoid race conditions
       for (const [k, r] of records.entries()) {
         if (isExpired(r)) {
           records.delete(k);
@@ -80,7 +80,7 @@ export function createIdempotencyStore(): IdempotencyStore {
     },
 
     /**
-     * Marca uma operação como concluída e armazena o resultado.
+     * Marks an operation as completed and stores the result.
      */
     async complete<T = unknown>(key: string, result: T): Promise<void> {
       const record = records.get(key);
@@ -98,7 +98,7 @@ export function createIdempotencyStore(): IdempotencyStore {
     },
 
     /**
-     * Marca uma operação como falha e armazena o erro.
+     * Marks an operation as failed and stores the error.
      */
     async fail(key: string, error: unknown): Promise<void> {
       const record = records.get(key);
@@ -116,7 +116,7 @@ export function createIdempotencyStore(): IdempotencyStore {
     },
 
     /**
-     * Remove um registro de idempotência.
+     * Removes an idempotency record.
      */
     async delete(key: string): Promise<void> {
       records.delete(key);

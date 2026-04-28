@@ -1,14 +1,14 @@
 import {Step, StepStatus} from "../types";
 
 /**
- * Gerencia o estado interno de execução dos passos de um fluxo.
- * @template TInput O tipo dos dados de entrada do fluxo.
+ * Manages the internal execution state of flow steps.
+ * @template TInput The type of the flow input data.
  */
 export class State<TInput> {
   private manager: Map<string, StepStatus> = new Map<string, StepStatus>();
 
   /**
-   * @param steps Lista de passos do fluxo para inicializar o estado.
+   * @param steps List of flow steps to initialize the state.
    */
   constructor(steps: Step<TInput>[]) {
     steps.forEach(step => {
@@ -17,18 +17,18 @@ export class State<TInput> {
   }
 
   /**
-   * Atualiza o status de um passo.
-   * @param step O passo a ser atualizado.
-   * @param status O novo status.
+   * Updates the status of a step.
+   * @param step The step to be updated.
+   * @param status The new status.
    */
   update(step: Step<TInput>, status: StepStatus): void {
     this.manager.set(step.name, status);
   }
 
   /**
-   * Obtém o status atual de um passo.
-   * @param step O passo desejado.
-   * @returns O status atual.
+   * Gets the current status of a step.
+   * @param step The desired step.
+   * @returns The current status.
    */
   getStatus(step: Step<TInput>): StepStatus {
     return this.manager.get(step.name) ?? 'pending';

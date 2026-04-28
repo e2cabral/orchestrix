@@ -10,23 +10,23 @@ import { IdempotencyRecord, IdempotencyStore } from "../types";
 import { IdempotencyRecordNotFoundError } from "../errors";
 
 /**
- * Opções para o armazenamento de idempotência no DynamoDB.
+ * Options for the DynamoDB idempotency store.
  */
 export interface DynamoDBStoreOptions {
-  /** Nome da tabela no DynamoDB. */
+  /** DynamoDB table name. */
   tableName: string;
-  /** Nome do atributo da chave de partição (padrão: 'key'). */
+  /** Partition key attribute name (default: 'key'). */
   partitionKey?: string;
-  /** Nome do atributo de TTL para o DynamoDB (padrão: 'ttl'). */
+  /** TTL attribute name for DynamoDB (default: 'ttl'). */
   ttlAttribute?: string;
 }
 
 /**
- * Cria uma implementação do armazenamento de idempotência usando DynamoDB.
+ * Creates an idempotency store implementation using DynamoDB.
  * 
- * @param client Instância do DynamoDBClient da AWS SDK v3.
- * @param options Configurações da tabela.
- * @returns Uma instância de IdempotencyStore.
+ * @param client AWS SDK v3 DynamoDBClient instance.
+ * @param options Table configurations.
+ * @returns An IdempotencyStore instance.
  */
 export function dynamoIdempotencyStore(
   client: DynamoDBClient,
@@ -49,7 +49,7 @@ export function dynamoIdempotencyStore(
       const item = response.Item;
       if (!item) return null;
 
-      // Verificação manual de expiração pois o TTL do DynamoDB não é imediato
+      // Manual expiration check as DynamoDB TTL is not immediate
       if (item.expiresAt && item.expiresAt < Date.now()) {
         return null;
       }
@@ -93,7 +93,7 @@ export function dynamoIdempotencyStore(
               expiresAt,
               ...(ttl ? { [ttlAttr]: ttl } : {}),
             },
-            // Condição: Chave não existe OU (status != 'running' E (expiresAt é nulo OU já expirou))
+            // Condition: Key does not exist OR (status != 'running' AND (expiresAt is null OR already expired))
             ConditionExpression: `attribute_not_exists(#pk) OR (#status <> :running AND (attribute_not_exists(expiresAt) OR expiresAt < :now))`,
             ExpressionAttributeNames: {
               "#pk": pk,
@@ -187,7 +187,7 @@ export function dynamoIdempotencyStore(
     },
 
     async cleanup(): Promise<void> {
-      // O DynamoDB gerencia o TTL automaticamente se configurado na tabela.
+      // DynamoDB automatically manages TTL if configured on the table.
     },
   };
 }

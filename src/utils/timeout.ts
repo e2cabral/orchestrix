@@ -1,10 +1,10 @@
 /**
- * Executa uma promise com um tempo limite.
- * @template T O tipo do retorno da promise.
- * @param promise A promise a ser executada.
- * @param timeoutMs Tempo limite em milissegundos.
- * @returns O resultado da promise original.
- * @throws Erro de timeout se o tempo for excedido.
+ * Executes a promise with a timeout.
+ * @template T The return type of the promise.
+ * @param promise The promise to be executed.
+ * @param timeoutMs Timeout in milliseconds.
+ * @returns The result of the original promise.
+ * @throws Timeout error if the time is exceeded.
  */
 export function runWithTimeout<T>(
   promise: Promise<T>,

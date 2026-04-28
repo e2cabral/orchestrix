@@ -1,20 +1,28 @@
 /**
- * Opções para a lógica de re-tentativa.
+ * Options for the retry logic.
  */
 type RetryOptions = {
-  /** Número máximo de tentativas. */
+  /** Maximum number of attempts. */
   retries: number;
-  /** Atraso entre as tentativas em milissegundos. */
+  /** Delay between attempts in milliseconds. */
   retryDelayMs: number;
+
+  /**
+   * The backoff strategy to use.
+   * 'fixed': Fixed delay.
+   * 'linear': Linear increase (retryDelayMs * attempt).
+   * 'exponential': Exponential increase (retryDelayMs * 2^attempt).
+   */
+  backoffFactor?: 'fixed' | 'linear' | 'exponential';
 };
 
 /**
- * Executa uma função com lógica de re-tentativa em caso de falha.
- * @template T O tipo do retorno da função.
- * @param fn A função a ser executada.
- * @param options Configurações de retry.
- * @returns O resultado da função se bem-sucedida.
- * @throws O último erro ocorrido se todas as tentativas falharem.
+ * Executes a function with retry logic in case of failure.
+ * @template T The return type of the function.
+ * @param fn The function to be executed.
+ * @param options Retry settings.
+ * @returns The result of the function if successful.
+ * @throws The last error occurred if all attempts fail.
  */
 export async function runWithRetry<T>(
   fn: () => Promise<T> | T,
@@ -23,6 +31,23 @@ export async function runWithRetry<T>(
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= options.retries; attempt++) {
+    let multiplierExpression: number;
+
+    switch (options.backoffFactor) {
+      case 'fixed':
+        multiplierExpression = options.retryDelayMs;
+        break;
+      case 'linear':
+        multiplierExpression = (options.retryDelayMs * (attempt + 1));
+        break;
+      case 'exponential':
+        multiplierExpression = (options.retryDelayMs * Math.pow(2, attempt));
+        break;
+      default:
+        multiplierExpression = options.retryDelayMs;
+        break;
+    }
+
     try {
       return await fn();
     } catch (error) {
@@ -30,11 +55,11 @@ export async function runWithRetry<T>(
 
       if (attempt < options.retries && options.retryDelayMs > 0) {
         await new Promise((resolve) =>
-          setTimeout(resolve, options.retryDelayMs)
+          setTimeout(resolve, multiplierExpression)
         );
       }
     }
   }
 
-  throw lastError;
+  throw new Error('Retry failed after all attempts');
 }

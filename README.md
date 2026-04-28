@@ -1,22 +1,22 @@
 # LocalFlow
 
-LocalFlow é um orquestrador de workflows leve e flexível para Node.js e TypeScript. Ele permite definir sequências de passos (steps) com suporte nativo a retries, timeouts, compensação (sagas) e idempotência.
+LocalFlow is a lightweight and flexible workflow orchestrator for Node.js and TypeScript. It allows you to define sequences of steps with native support for retries, timeouts, compensation (sagas), and idempotency.
 
-## Características
+## Features
 
-- 🚀 **Leve e Rápido**: Sem dependências externas pesadas.
-- 🛡️ **Robusto**: Tratamento de erros integrado com retries e timeouts.
-- 🔄 **Sagas/Compensação**: Reverte passos executados com sucesso se algo falhar adiante.
-- 🆔 **Idempotência**: Garante que a mesma operação não seja executada múltiplas vezes.
-- 📝 **TypeScript First**: Totalmente tipado para uma melhor experiência de desenvolvimento.
+- 🚀 **Lightweight and Fast**: No heavy external dependencies.
+- 🛡️ **Robust**: Integrated error handling with retries and timeouts.
+- 🔄 **Sagas/Compensation**: Reverts successfully executed steps if something fails later.
+- 🆔 **Idempotency**: Ensures that the same operation is not executed multiple times.
+- 📝 **TypeScript First**: Fully typed for a better developer experience.
 
-## Instalação
+## Installation
 
 ```bash
 npm install localflow
 ```
 
-## Uso Básico
+## Basic Usage
 
 ```typescript
 import { create } from 'localflow';
@@ -26,25 +26,25 @@ const flow = create<{ userId: string }>('user-signup')
     if (!ctx.input.userId) throw new Error('Invalid User ID');
   })
   .step('create-db-record', async (ctx) => {
-    // Lógica para criar registro no banco
+    // Logic to create record in the database
     ctx.set('dbId', '12345');
   })
   .step('send-welcome-email', async (ctx) => {
     const dbId = ctx.get<string>('dbId');
-    // Lógica para enviar email
+    // Logic to send email
   });
 
 const result = await flow.run({ userId: 'abc' });
 console.log(result.status); // 'completed'
 ```
 
-## Funcionalidades Avançadas
+## Advanced Features
 
-### Retries e Timeouts
+### Retries and Timeouts
 
 ```typescript
 flow.step('external-api', async (ctx) => {
-  // Chamada de API instável
+  // Unstable API call
 }, {
   retries: 3,
   retryDelayMs: 1000,
@@ -52,9 +52,9 @@ flow.step('external-api', async (ctx) => {
 });
 ```
 
-### Compensação (Sagas)
+### Compensation (Sagas)
 
-Se um passo falhar, o LocalFlow executa as funções de compensação de todos os passos anteriores que foram concluídos com sucesso, em ordem reversa.
+If a step fails, LocalFlow executes the compensation functions of all previously successfully completed steps, in reverse order.
 
 ```typescript
 flow
@@ -68,14 +68,14 @@ flow
   .step('provision-service', async (ctx) => {
     throw new Error('Provisioning failed');
   });
-// Ao falhar no segundo passo, o refund() do primeiro será executado.
+// If the second step fails, the refund() of the first will be executed.
 ```
 
-### Idempotência
+### Idempotency
 
-O LocalFlow suporta persistência de idempotência em memória (padrão) ou em backends externos como Redis e DynamoDB.
+LocalFlow supports idempotency persistence in memory (default) or external backends like Redis and DynamoDB.
 
-#### Em Memória (Default)
+#### In-Memory (Default)
 
 ```typescript
 import { createIdempotencyStore } from 'localflow';
@@ -85,13 +85,13 @@ const flow = create('payment-flow', { idempotency: store });
 
 const result = await flow.run(data, {
   key: 'order-123',
-  ttlMs: 3600000 // 1 hora
+  ttlMs: 3600000 // 1 hour
 });
 ```
 
 #### Redis
 
-Para usar o Redis, você precisa instalar o pacote `redis` como dependência.
+To use Redis, you need to install the `redis` package as a dependency.
 
 ```typescript
 import { createClient } from 'redis';
@@ -106,7 +106,7 @@ const flow = create('payment-flow', { idempotency: store });
 
 #### DynamoDB
 
-Para usar o DynamoDB, você precisa instalar o pacote `@aws-sdk/client-dynamodb` e `@aws-sdk/lib-dynamodb` como dependências.
+To use DynamoDB, you need to install the `@aws-sdk/client-dynamodb` and `@aws-sdk/lib-dynamodb` packages as dependencies.
 
 ```typescript
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -119,53 +119,53 @@ const store = dynamoIdempotencyStore(client, {
 const flow = create('payment-flow', { idempotency: store });
 ```
 
-## Fluxo de Execução
+## Execution Flow
 
 ```mermaid
 graph TD
-    A[Início do Flow] --> B{Possui Idempotência?}
-    B -- Sim --> C{Chave no Cache?}
-    C -- Sim --> D[Retorna Resultado Cacheado]
-    C -- Não --> E[Marca como Running]
-    B -- Não --> F[Inicia Contexto]
+    A[Flow Start] --> B{Has Idempotency?}
+    B -- Yes --> C{Key in Cache?}
+    C -- Yes --> D[Return Cached Result]
+    C -- No --> E[Mark as Running]
+    B -- No --> F[Initialize Context]
     E --> F
-    F --> G[Executa Step]
-    G --> H{Sucesso?}
-    H -- Sim --> I{Mais Steps?}
-    I -- Sim --> G
-    I -- Não --> J[Finaliza com Sucesso]
-    H -- Não --> K{Possui Retry?}
-    K -- Sim --> L[Aguarda Delay e Re-executa]
+    F --> G[Execute Step]
+    G --> H{Success?}
+    H -- Yes --> I{More Steps?}
+    I -- Yes --> G
+    I -- No --> J[Finish with Success]
+    H -- No --> K{Has Retry?}
+    K -- Yes --> L[Wait Delay and Re-execute]
     L --> G
-    K -- Não --> M[Inicia Compensação]
-    M --> N[Executa Compensate em Ordem Reversa]
-    N --> O[Finaliza com Falha]
-    J --> P{Salva Cache?}
-    P -- Sim --> Q[Salva Resultado]
-    P -- Não --> R[Fim]
+    K -- No --> M[Start Compensation]
+    M --> N[Execute Compensate in Reverse Order]
+    N --> O[Finish with Failure]
+    J --> P{Save Cache?}
+    P -- Yes --> Q[Save Result]
+    P -- No --> R[End]
     Q --> R
-    O --> S{Salva Erro?}
-    S -- Sim --> T[Salva Erro no Cache]
-    S -- Não --> R
+    O --> S{Save Error?}
+    S -- Yes --> T[Save Error in Cache]
+    S -- No --> R
     T --> R
 ```
 
-## Estados do Fluxo
+## Flow States
 
 ```mermaid
 stateDiagram-v2
     [*] --> pending
     pending --> running
-    running --> completed: Todos os passos OK
-    running --> failed: Passo falhou após retries
-    failed --> cancelled: Compensação finalizada
+    running --> completed: All steps OK
+    running --> failed: Step failed after retries
+    failed --> cancelled: Compensation finished
     completed --> [*]
     cancelled --> [*]
 ```
 
-## Documentação de API
+## API Documentation
 
-Acesse o JSDoc gerado no código para detalhes sobre cada classe e método.
+Access the generated JSDoc in the code for details on each class and method.
 
 ---
-Desenvolvido com ❤️ para fluxos locais eficientes.
+Developed with ❤️ for efficient local flows.

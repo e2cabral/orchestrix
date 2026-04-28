@@ -1,7 +1,7 @@
 import {FlowContext} from "../core/context";
 
 /**
- * Status possíveis de um fluxo de execução.
+ * Possible statuses of an execution flow.
  */
 export type FlowStatus =
   | 'pending'
@@ -11,101 +11,101 @@ export type FlowStatus =
   | 'cancelled';
 
 /**
- * Status possíveis de um passo (step) individual do fluxo.
+ * Possible statuses of an individual flow step.
  */
 export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 /**
- * Opções de configuração para um passo do fluxo.
+ * Configuration options for a flow step.
  */
 export type StepOptions<TInput> = {
-  /** Número máximo de tentativas em caso de falha. */
+  /** Maximum number of retry attempts in case of failure. */
   retries?: number;
-  /** Atraso em milissegundos entre as tentativas. */
+  /** Delay in milliseconds between retry attempts. */
   retryDelayMs?: number;
-  /** Tempo máximo em milissegundos para a execução do passo. */
+  /** Maximum time in milliseconds for the step execution. */
   timeoutMs?: number;
-  /** Função de compensação executada caso o fluxo falhe em um passo posterior. */
+  /** Compensation function executed if the flow fails in a subsequent step. */
   compensate?: (ctx: FlowContext<TInput>) => Promise<void> | void;
 }
 
 /**
- * Resultado da execução de um passo individual.
+ * Result of an individual step execution.
  */
 export type StepResult = {
-  /** Nome do passo. */
+  /** Step name. */
   name: string;
-  /** Status final do passo. */
+  /** Final step status. */
   status: StepStatus;
-  /** Número de tentativas realizadas. */
+  /** Number of attempts made. */
   attempts: number;
-  /** Duração da execução em milissegundos. */
+  /** Execution duration in milliseconds. */
   durationMs: number;
-  /** Erro ocorrido, se houver. */
+  /** Error occurred, if any. */
   error?: unknown;
 }
 
 /**
- * Resultado consolidado da execução de um fluxo.
+ * Consolidated result of a flow execution.
  */
 export type FlowResult = {
-  /** Nome do fluxo. */
+  /** Flow name. */
   name: string;
-  /** Status final do fluxo. */
+  /** Final flow status. */
   status: FlowStatus;
-  /** Duração total da execução em milissegundos. */
+  /** Total execution duration in milliseconds. */
   durationMs: number;
-  /** Lista de resultados de cada passo executado. */
+  /** List of results for each executed step. */
   steps: StepResult[];
-  /** Erro que causou a falha do fluxo, se houver. */
+  /** Error that caused the flow failure, if any. */
   error?: unknown;
 }
 
 /**
- * Representação interna de um passo do fluxo.
+ * Internal representation of a flow step.
  */
 export type Step<TInput> = {
-  /** Nome único do passo. */
+  /** Unique step name. */
   name: string;
-  /** Função de execução do passo. */
+  /** Step execution function. */
   fn: (ctx: FlowContext<TInput>) => Promise<void> | void;
-  /** Opções específicas do passo. */
+  /** Specific step options. */
   options?: StepOptions<TInput>;
 }
 
 /**
- * Status possíveis para um registro de idempotência.
+ * Possible statuses for an idempotency record.
  */
 export type IdempotencyStatus = 'running' | 'completed' | 'failed';
 
 /**
- * Registro armazenado no sistema de idempotência.
+ * Record stored in the idempotency system.
  */
 export type IdempotencyRecord<T = unknown> = {
-  /** Chave única de idempotência. */
+  /** Unique idempotency key. */
   key: string;
-  /** Status atual da operação. */
+  /** Current operation status. */
   status: IdempotencyStatus;
-  /** Timestamp de criação. */
+  /** Creation timestamp. */
   createdAt: number;
-  /** Timestamp da última atualização. */
+  /** Last update timestamp. */
   updatedAt: number;
-  /** Timestamp de expiração opcional. */
+  /** Optional expiration timestamp. */
   expiresAt?: number;
-  /** Dados de resultado armazenados. */
+  /** Stored result data. */
   data?: T;
-  /** Erro armazenado caso a operação tenha falhado. */
+  /** Stored error if the operation failed. */
   error?: unknown;
 }
 
 /**
- * Interface para implementações de armazenamento de idempotência.
+ * Interface for idempotency store implementations.
  */
 export type IdempotencyStore = {
-  /** Obtém um registro pela chave. */
+  /** Gets a record by key. */
   get<T = unknown>(key: string): Promise<IdempotencyRecord<T> | null>;
 
-  /** Inicia uma nova operação com a chave fornecida. */
+  /** Starts a new operation with the given key. */
   start(key: string, options?: {
     ttlMs?: number;
   }): Promise<{
@@ -113,47 +113,47 @@ export type IdempotencyStore = {
     record: IdempotencyRecord;
   }>;
 
-  /** Marca a operação como concluída com sucesso. */
+  /** Marks the operation as successfully completed. */
   complete<T = unknown>(key: string, result: T): Promise<void>;
 
-  /** Marca a operação como falha. */
+  /** Marks the operation as failed. */
   fail(key: string, error: unknown): Promise<void>;
 
-  /** Remove um registro de idempotência. */
+  /** Removes an idempotency record. */
   delete(key: string): Promise<void>;
 
-  /** Limpa registros expirados. */
+  /** Cleans up expired records. */
   cleanup(): Promise<void>;
 }
 
 /**
- * Opções para execução idempotente de um fluxo.
+ * Options for idempotent flow execution.
  */
 export type IdempotentRunOptions = {
-  /** Chave única para identificar esta execução. */
+  /** Unique key to identify this execution. */
   key: string;
-  /** Tempo de vida do registro em milissegundos. */
+  /** Record time-to-live in milliseconds. */
   ttlMs?: number;
-  /** Se deve fazer cache do resultado (padrão: true). */
+  /** Whether to cache the result (default: true). */
   cacheResult?: boolean;
-  /** Se deve lançar erro caso a operação já esteja em execução (padrão: false). */
+  /** Whether to throw an error if the operation is already running (default: false). */
   throwIfRunning?: boolean;
 };
 
 /**
- * Resultado de uma tentativa de execução idempotente.
+ * Result of an idempotent execution attempt.
  */
 export type IdempotentRunResult<T> = {
-  /** Status da execução: executada agora, retornada do cache ou já em execução. */
+  /** Execution status: executed now, returned from cache, or already running. */
   status: "executed" | "cached" | "running";
-  /** Valor retornado, se disponível (cacheado ou executado). */
+  /** Returned value, if available (cached or executed). */
   value?: T;
 };
 
 /**
- * Configuração global do fluxo.
+ * Global flow configuration.
  */
 export type FlowConfig = {
-  /** Implementação do armazenamento de idempotência. */
+  /** Idempotency store implementation. */
   idempotency?: IdempotencyStore;
 };

@@ -14,15 +14,15 @@ import {State} from "./state";
 import {StepAlreadyExistsError, FlowAlreadyRunningError} from "../errors";
 
 /**
- * Classe principal para definição e execução de fluxos de trabalho (workflows).
- * @template TInput O tipo dos dados de entrada do fluxo.
+ * Main class for defining and executing workflows.
+ * @template TInput The type of the flow input data.
  */
 export class Flow<TInput = unknown> {
   private steps: Step<TInput>[] = [];
 
   /**
-   * @param name Nome do fluxo.
-   * @param config Configurações opcionais do fluxo.
+   * @param name Flow name.
+   * @param config Optional flow configurations.
    */
   constructor(
     public readonly name: string,
@@ -31,12 +31,12 @@ export class Flow<TInput = unknown> {
   }
 
   /**
-   * Adiciona um novo passo ao fluxo.
-   * @param name Nome único do passo.
-   * @param fn Função a ser executada neste passo.
-   * @param options Opções de configuração do passo (retry, timeout, compensação).
-   * @returns A própria instância do Flow para encadeamento.
-   * @throws Erro se já existir um passo com o mesmo nome.
+   * Adds a new step to the flow.
+   * @param name Unique step name.
+   * @param fn Function to be executed in this step.
+   * @param options Step configuration options (retry, timeout, compensation).
+   * @returns The Flow instance for chaining.
+   * @throws Error if a step with the same name already exists.
    */
   step(name: string, fn: Step<TInput>['fn'], options?: StepOptions<TInput>): this {
     if (this.steps.some(step => step.name === name)) {
@@ -47,10 +47,10 @@ export class Flow<TInput = unknown> {
   }
 
   /**
-   * Executa o fluxo com os dados fornecidos.
-   * @param input Dados de entrada para o fluxo.
-   * @param idempotencyOptions Opções para execução idempotente.
-   * @returns Resultado consolidado da execução do fluxo.
+   * Runs the flow with the provided data.
+   * @param input Input data for the flow.
+   * @param idempotencyOptions Options for idempotent execution.
+   * @returns Consolidated result of the flow execution.
    */
   async run(input: TInput, idempotencyOptions?: IdempotentRunOptions): Promise<FlowResult> {
     const cached = await this.preRunIdempotency(input, idempotencyOptions);
@@ -112,7 +112,7 @@ export class Flow<TInput = unknown> {
   }
 
   /**
-   * Executa as verificações de idempotência antes de iniciar o fluxo.
+   * Executes idempotency checks before starting the flow.
    */
   private async preRunIdempotency(input: TInput, options?: IdempotentRunOptions): Promise<FlowResult | null> {
     if (!options || !this.config.idempotency) return null;
@@ -140,7 +140,7 @@ export class Flow<TInput = unknown> {
   }
 
   /**
-   * Finaliza o registro de idempotência após a execução do fluxo.
+   * Finalizes the idempotency record after flow execution.
    */
   private async postRunIdempotency(result: FlowResult, options?: IdempotentRunOptions): Promise<void> {
     if (!options || !this.config.idempotency) return;
@@ -157,7 +157,7 @@ export class Flow<TInput = unknown> {
   }
 
   /**
-   * Executa um único passo do fluxo, tratando retries e timeout.
+   * Executes a single flow step, handling retries and timeout.
    */
   private async executeStep(
     step: Step<TInput>,
@@ -210,7 +210,7 @@ export class Flow<TInput = unknown> {
   }
 
   /**
-   * Trata falhas em passos, executando as compensações necessárias em ordem reversa.
+   * Handles step failures, executing necessary compensations in reverse order.
    */
   private async handleStepFailure(
     error: unknown,
@@ -224,14 +224,14 @@ export class Flow<TInput = unknown> {
           await executedStep.options.compensate(ctx);
           manager.update(executedStep, 'cancelled');
         } catch (compensationError) {
-          // Compensação falhou, mas não interrompemos o fluxo de erro original
+          // Compensation failed, but we do not interrupt the original error flow
         }
       }
     }
   }
 
   /**
-   * Gerencia a lógica de idempotência antes da execução real.
+   * Manages idempotency logic before actual execution.
    */
   private async handleIdempotency(
     input: TInput,
