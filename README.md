@@ -71,6 +71,25 @@ flow
 // If the second step fails, the refund() of the first will be executed.
 ```
 
+### Execução Paralela
+
+Você pode executar vários steps em paralelo utilizando o método `.parallel()`.
+
+```typescript
+flow.parallel('parallel-block', [
+  {
+    name: 'send-email',
+    fn: async () => { /* ... */ }
+  },
+  {
+    name: 'log-event',
+    fn: async () => { /* ... */ }
+  }
+], {
+  failFast: true // Opcional: Se qualquer um falhar, o bloco inteiro falha imediatamente
+});
+```
+
 ### Idempotency
 
 LocalFlow supports idempotency persistence in memory (default) or external backends like Redis and DynamoDB.

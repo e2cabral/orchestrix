@@ -5,7 +5,9 @@ import {
   StepOptions,
   StepResult,
   IdempotentRunOptions,
-  IdempotentRunResult
+  IdempotentRunResult,
+  FlowNode,
+  ParallelOptions
 } from "../types";
 import {FlowContext} from "./context";
 import {runWithRetry} from "../utils/retry";
@@ -18,7 +20,7 @@ import {StepAlreadyExistsError, FlowAlreadyRunningError} from "../errors";
  * @template TInput The type of the flow input data.
  */
 export class Flow<TInput = unknown> {
-  private steps: Step<TInput>[] = [];
+  private nodes: FlowNode<TInput>[] = [];
 
   /**
    * @param name Flow name.
@@ -39,10 +41,47 @@ export class Flow<TInput = unknown> {
    * @throws Error if a step with the same name already exists.
    */
   step(name: string, fn: Step<TInput>['fn'], options?: StepOptions<TInput>): this {
-    if (this.steps.some(step => step.name === name)) {
+    const stepAlreadyExists = this.nodes.some(node => {
+      switch (node.type) {
+        case 'step':
+          return node.step.name === name;
+        case 'parallel':
+          return node.steps.some(step => step.name === name);
+      }
+    });
+
+    if (stepAlreadyExists) {
       throw new StepAlreadyExistsError(name);
     }
-    this.steps.push({name, fn, options});
+
+    this.nodes.push({type: 'step', step: {name, fn, options}});
+    return this;
+  }
+
+  /**
+   * Defines a set of steps to be executed in parallel.
+   *
+   * @param name - The unique name for this parallel execution block.
+   * @param steps - The list of steps to execute concurrently.
+   * @param options - The options to execute concurrently
+   * @returns The flow instance for chaining.
+   * @throws {StepAlreadyExistsError} If a step or parallel block with the same name already exists.
+   */
+  parallel(name: string, steps: Step<TInput>[], options?: ParallelOptions) {
+    const stepAlreadyExists = this.nodes.some(node => {
+      switch (node.type) {
+        case 'step':
+          return node.step.name === name;
+        case 'parallel':
+          return node.steps.some(step => step.name === name);
+      }
+    });
+
+    if (stepAlreadyExists) {
+      throw new StepAlreadyExistsError(name);
+    }
+
+    this.nodes.push({type: 'parallel', steps, options});
     return this;
   }
 
@@ -56,9 +95,16 @@ export class Flow<TInput = unknown> {
     const cached = await this.preRunIdempotency(input, idempotencyOptions);
     if (cached) return cached;
 
+    const flattenedNodes = this.nodes.flatMap(node => {
+      if (node.type === 'parallel') {
+        return node.steps;
+      }
+      return node.step;
+    });
+
     const startedAt = Date.now();
     const ctx = new FlowContext(input);
-    const manager = new State(this.steps);
+    const manager = new State(flattenedNodes);
     const results: StepResult[] = [];
     const executedSteps: Step<TInput>[] = [];
 
@@ -70,11 +116,46 @@ export class Flow<TInput = unknown> {
     };
 
     try {
-      for (const step of this.steps) {
-        const stepResult = await this.executeStep(step, ctx, manager);
-        results.push(stepResult);
+      for (const node of this.nodes) {
+        let stepResult: StepResult | undefined;
+        let stepResults: StepResult[] = [];
 
-        if (stepResult.status === 'failed') {
+        switch (node.type) {
+          case "step":
+            stepResult = await this.executeStep(node.step, ctx, manager);
+            results.push(stepResult);
+            break;
+          case "parallel":
+            stepResults = await this.executeParallelSteps(node.steps, ctx, manager, node.options);
+            results.push(...stepResults);
+            
+            const failedSteps = stepResults.filter(s => s.status === 'failed');
+            
+            if (node.options?.failFast) {
+              stepResult = failedSteps.length > 0 ? failedSteps[0] : undefined;
+            } else {
+              stepResult = failedSteps.length === node.steps.length ? failedSteps[0] : undefined;
+            }
+            break;
+        }
+
+        if (!stepResult && stepResults.length === 0) {
+          continue;
+        }
+
+        if (stepResult?.status === 'failed') {
+          if (node.type === 'parallel') {
+            for (const step of node.steps) {
+              if (step.name !== stepResult.name && step.options?.compensate) {
+                try {
+                  await step.options.compensate(ctx);
+                } catch (e) {
+                  // Ignore compensation error
+                }
+              }
+            }
+          }
+
           await this.handleStepFailure(stepResult.error, ctx, manager, executedSteps);
 
           result = {
@@ -89,7 +170,7 @@ export class Flow<TInput = unknown> {
           return result;
         }
 
-        executedSteps.push(step);
+        executedSteps.push(...(node.type === 'step' ? [node.step] : node.steps));
       }
 
       result = {
@@ -207,6 +288,25 @@ export class Flow<TInput = unknown> {
         error,
       };
     }
+  }
+
+  private async executeParallelSteps(steps: Step<TInput>[], ctx: FlowContext<TInput>, manager: State<TInput>, options?: ParallelOptions): Promise<StepResult[]> {
+    const promises = steps.map(step => this.executeStep(step, ctx, manager));
+    const results: PromiseSettledResult<StepResult>[] = await Promise.allSettled(promises);
+    
+    return results.map(result => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      }
+      
+      return {
+        name: 'unknown',
+        status: 'failed',
+        attempts: 0,
+        durationMs: 0,
+        error: result.reason,
+      };
+    });
   }
 
   /**

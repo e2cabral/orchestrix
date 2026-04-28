@@ -1,4 +1,5 @@
 import {FlowContext} from "../core/context";
+import {Flow} from "../core/flow";
 
 /**
  * Possible statuses of an execution flow.
@@ -74,6 +75,14 @@ export type Step<TInput> = {
   /** Specific step options. */
   options?: StepOptions<TInput>;
 }
+
+export type FlowNode<TInput> =
+  | { type: 'step', step: Step<TInput> }
+  | { type: 'parallel', steps: Step<TInput>[], options?: ParallelOptions };
+
+export type ParallelOptions = {
+  failFast?: boolean;
+};
 
 /**
  * Possible statuses for an idempotency record.

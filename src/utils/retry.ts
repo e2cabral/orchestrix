@@ -62,5 +62,5 @@ export async function runWithRetry<T>(
     }
   }
 
-  throw new Error('Retry failed after all attempts');
+  throw lastError;
 }
