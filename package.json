@@ -1,5 +1,5 @@
 {
-  "name": "orchestrix",
+  "name": "@eddiecbrl/orchestrix",
   "version": "0.1.0",
   "description": "Local workflow orchestration for Node.js and TypeScript",
   "type": "module",
@@ -47,5 +47,5 @@
       "optional": true
     }
   },
-  "private": true
+  "private": false
 }
