@@ -1,6 +1,6 @@
 # Core Concepts
 
-This page explains the building blocks behind LocalFlow.
+This page explains the building blocks behind Orchestrix.
 
 ## Flow
 
@@ -14,7 +14,7 @@ Nodes can be:
 You create a flow with:
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 const flow = create("my-flow");
 ```
@@ -23,7 +23,7 @@ The flow name is included in results and lifecycle hook events.
 
 ## Step
 
-A step is the smallest unit of work in LocalFlow.
+A step is the smallest unit of work in Orchestrix.
 
 ```ts
 flow.step("create-record", async (ctx) => {
@@ -37,7 +37,7 @@ Each step has:
 - an execution function
 - optional runtime behavior like retries, timeout, and compensation
 
-Step names must be unique across the whole flow. LocalFlow throws `StepAlreadyExistsError` when a duplicate is registered.
+Step names must be unique across the whole flow. Orchestrix throws `StepAlreadyExistsError` when a duplicate is registered.
 
 ## FlowContext
 
@@ -108,7 +108,7 @@ Retry attempts are counted in the final `StepResult.attempts`.
 
 ## Timeout model
 
-When `timeoutMs` is present, LocalFlow races the step execution against a timeout promise.
+When `timeoutMs` is present, Orchestrix races the step execution against a timeout promise.
 
 If the timeout wins:
 
@@ -130,7 +130,7 @@ flow.step("create-user", async () => {
 });
 ```
 
-When a later step fails, LocalFlow compensates previously completed steps in reverse order.
+When a later step fails, Orchestrix compensates previously completed steps in reverse order.
 
 Compensation errors do not replace the original flow failure.
 
@@ -183,7 +183,7 @@ Hook failures are swallowed internally, so a broken observer does not break the 
 
 Idempotency allows repeated calls with the same key to behave safely.
 
-LocalFlow supports:
+Orchestrix supports:
 
 - an in-memory store
 - a Redis store

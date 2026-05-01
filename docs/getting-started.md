@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks through the current LocalFlow developer experience from installation to a first production-style flow.
+This guide walks through the current Orchestrix developer experience from installation to a first production-style flow.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ npm run build
 ## Your first flow
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 type Input = {
   email: string;
@@ -117,7 +117,7 @@ flow
 ### Make execution idempotent
 
 ```ts
-import { create, createIdempotencyStore } from "localflow";
+import { create, createIdempotencyStore } from "orchestrix";
 
 const store = createIdempotencyStore();
 

@@ -1,10 +1,10 @@
-# LocalFlow
+# Orchestrix
 
-LocalFlow is a lightweight workflow orchestrator for Node.js and TypeScript.
+Orchestrix is a lightweight workflow orchestrator for Node.js and TypeScript.
 
 It helps you model multi-step application flows with a small, typed API and first-class support for retries, timeouts, compensation, idempotent execution, lifecycle hooks, and parallel step groups.
 
-## Why LocalFlow
+## Why Orchestrix
 
 - Build workflows with a fluent, readable API.
 - Share state safely across steps with a typed runtime context.
@@ -25,7 +25,7 @@ It helps you model multi-step application flows with a small, typed API and firs
 
 ## Overview
 
-LocalFlow is designed for application-level orchestration:
+Orchestrix is designed for application-level orchestration:
 
 - signup flows
 - payment pipelines
@@ -47,7 +47,7 @@ Flows can also define parallel groups for independent operations that should run
 ### Create a flow
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 type SignupInput = {
   email: string;
@@ -83,7 +83,7 @@ console.log(result.steps);
 ### Add retries and timeouts
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 const flow = create("external-sync").step(
   "call-api",
@@ -104,7 +104,7 @@ const flow = create("external-sync").step(
 ### Add compensation
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 const flow = create("purchase")
   .step(
@@ -126,7 +126,7 @@ const flow = create("purchase")
 ### Run with idempotency
 
 ```ts
-import { create, createIdempotencyStore } from "localflow";
+import { create, createIdempotencyStore } from "orchestrix";
 
 const store = createIdempotencyStore();
 
@@ -197,7 +197,7 @@ By default, a parallel group only fails the flow when all steps in that group fa
 
 ### Hooks
 
-LocalFlow supports lifecycle hooks for:
+Orchestrix supports lifecycle hooks for:
 
 - flow start
 - flow completion
@@ -244,6 +244,6 @@ npm run typecheck
 
 ## Project Status
 
-LocalFlow already includes the core orchestration primitives documented above.
+Orchestrix already includes the core orchestration primitives documented above.
 
 The repository also contains a roadmap in [NEXT_STEPS.md](./NEXT_STEPS.md) with ideas such as schema validation, cancellation support, richer errors, middleware, and deeper observability. Those items are not presented as stable features in this documentation unless they are implemented in the current source code.

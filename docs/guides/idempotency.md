@@ -1,6 +1,6 @@
 # Idempotency Guide
 
-Idempotency is one of the most important features in LocalFlow when flows interact with external systems.
+Idempotency is one of the most important features in Orchestrix when flows interact with external systems.
 
 It helps prevent duplicate work when the same request is retried by clients, queues, or webhooks.
 
@@ -19,7 +19,7 @@ Use idempotency for flows that:
 The simplest option is the built-in in-memory store.
 
 ```ts
-import { create, createIdempotencyStore } from "localflow";
+import { create, createIdempotencyStore } from "orchestrix";
 
 const store = createIdempotencyStore();
 
@@ -55,7 +55,7 @@ Use Redis when you need a shared idempotency backend across application instance
 
 ```ts
 import { createClient } from "redis";
-import { create, redisIdempotencyStore } from "localflow";
+import { create, redisIdempotencyStore } from "orchestrix";
 
 const redis = createClient();
 await redis.connect();
@@ -79,12 +79,12 @@ Use DynamoDB for cloud-native durable idempotency.
 
 ```ts
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { create, dynamoIdempotencyStore } from "localflow";
+import { create, dynamoIdempotencyStore } from "orchestrix";
 
 const client = new DynamoDBClient({});
 
 const store = dynamoIdempotencyStore(client, {
-  tableName: "localflow-idempotency",
+  tableName: "orchestrix-idempotency",
 });
 
 const flow = create("provisioning", {
@@ -127,7 +127,7 @@ Optional record expiration time in milliseconds.
 
 ### `cacheResult`
 
-When `false`, LocalFlow deletes successful records instead of caching the completed result.
+When `false`, Orchestrix deletes successful records instead of caching the completed result.
 
 This is useful when you only want duplicate-run protection during execution, not replay of the final result.
 
@@ -135,11 +135,11 @@ This is useful when you only want duplicate-run protection during execution, not
 
 When `true`, a duplicate in-flight execution throws `FlowAlreadyRunningError`.
 
-When `false`, LocalFlow returns a flow result with status `running`.
+When `false`, Orchestrix returns a flow result with status `running`.
 
 ## Cached results
 
-LocalFlow can return:
+Orchestrix can return:
 
 - a completed result from cache
 - a failed result from cache

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This page covers the most common issues you may run into while working with LocalFlow.
+This page covers the most common issues you may run into while working with Orchestrix.
 
 ## A step does not see data from a previous step
 
@@ -13,7 +13,7 @@ const userId = ctx.get<string>("userId");
 
 ## Duplicate step name error
 
-LocalFlow requires unique step names across registered nodes.
+Orchestrix requires unique step names across registered nodes.
 
 If you see `StepAlreadyExistsError`, rename the duplicate step or parallel block content so every step name is unique.
 
@@ -54,7 +54,7 @@ Compensation is intended for work that already completed successfully before a l
 
 This is also expected.
 
-LocalFlow intentionally swallows hook errors so observability code cannot break business execution.
+Orchestrix intentionally swallows hook errors so observability code cannot break business execution.
 
 ## Parallel group behavior is different from expected
 

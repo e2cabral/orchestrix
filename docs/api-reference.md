@@ -221,7 +221,7 @@ Creates a DynamoDB-backed implementation.
 
 Public error classes currently exported:
 
-- `LocalFlowError`
+- `OrchestrixError`
 - `StepAlreadyExistsError`
 - `FlowAlreadyRunningError`
 - `IdempotencyRecordNotFoundError`

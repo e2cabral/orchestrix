@@ -1,11 +1,11 @@
 # Examples
 
-This page collects practical patterns built from the current LocalFlow API.
+This page collects practical patterns built from the current Orchestrix API.
 
 ## Signup flow
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 type SignupInput = {
   email: string;
@@ -35,7 +35,7 @@ const signupFlow = create<SignupInput>("signup")
 ## Payment flow with rollback
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 const paymentFlow = create("payment")
   .step("reserve-inventory", async () => {
@@ -67,7 +67,7 @@ const paymentFlow = create("payment")
 ## Idempotent webhook processor
 
 ```ts
-import { create, createIdempotencyStore } from "localflow";
+import { create, createIdempotencyStore } from "orchestrix";
 
 const store = createIdempotencyStore();
 
@@ -89,7 +89,7 @@ export async function handleWebhook(event: { id: string }) {
 ## Hooks for logging
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 const flow = create("logged-flow", {
   hooks: {
@@ -105,7 +105,7 @@ const flow = create("logged-flow", {
 ## Parallel group with strict failure handling
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 const flow = create("fanout").parallel("notifications", [
   {

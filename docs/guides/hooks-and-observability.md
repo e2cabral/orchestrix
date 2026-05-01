@@ -1,13 +1,13 @@
 # Hooks and Observability
 
-Hooks are the built-in observability surface in LocalFlow.
+Hooks are the built-in observability surface in Orchestrix.
 
 They let you react to lifecycle events without mixing logging or telemetry logic into the workflow steps themselves.
 
 ## Define hooks
 
 ```ts
-import { create } from "localflow";
+import { create } from "orchestrix";
 
 const flow = create("hooks-demo", {
   hooks: {
@@ -75,7 +75,7 @@ Examples:
 
 ## Design behavior
 
-LocalFlow executes hooks with an internal safe wrapper.
+Orchestrix executes hooks with an internal safe wrapper.
 
 That means:
 

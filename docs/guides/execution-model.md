@@ -1,6 +1,6 @@
 # Execution Model
 
-This guide explains how LocalFlow behaves while a flow is running.
+This guide explains how Orchestrix behaves while a flow is running.
 
 ## Sequential execution
 
@@ -21,7 +21,7 @@ The execution order is:
 
 ## Step lifecycle
 
-For each step, LocalFlow:
+For each step, Orchestrix:
 
 1. emits `onStepStart`
 2. marks the step as `running`
@@ -51,13 +51,13 @@ Delay strategies:
 - `linear`: `retryDelayMs * (attempt + 1)`
 - `exponential`: `retryDelayMs * 2^attempt`
 
-If `jitter` is enabled, LocalFlow randomizes the delay up to the computed value.
+If `jitter` is enabled, Orchestrix randomizes the delay up to the computed value.
 
 ## Timeout semantics
 
 Timeout is evaluated per step attempt.
 
-If a step exceeds `timeoutMs`, that attempt fails with a timeout error. If retries are configured, LocalFlow can retry the step again until retries are exhausted.
+If a step exceeds `timeoutMs`, that attempt fails with a timeout error. If retries are configured, Orchestrix can retry the step again until retries are exhausted.
 
 ## Failure semantics
 
@@ -114,8 +114,8 @@ flow.parallel("parallel-work", steps, {
 
 If the group fails:
 
-- LocalFlow may compensate successful steps in that same parallel group when those steps define `compensate`
-- LocalFlow then compensates previously completed sequential work
+- Orchestrix may compensate successful steps in that same parallel group when those steps define `compensate`
+- Orchestrix then compensates previously completed sequential work
 
 ## Hook safety
 
@@ -131,7 +131,7 @@ This is useful for telemetry, logging, and debugging.
 
 ## Idempotent execution entry point
 
-Before the flow executes, LocalFlow can check the configured idempotency store.
+Before the flow executes, Orchestrix can check the configured idempotency store.
 
 Possible outcomes:
 
