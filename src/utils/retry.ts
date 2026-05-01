@@ -15,6 +15,7 @@ type RetryOptions = {
    */
   backoffFactor?: 'fixed' | 'linear' | 'exponential';
   jitter?: boolean;
+  maxRetryDelayMs?: number;
 };
 
 /**
@@ -47,6 +48,10 @@ export async function runWithRetry<T>(
       default:
         multiplierExpression = options.retryDelayMs;
         break;
+    }
+
+    if (options.maxRetryDelayMs && multiplierExpression > options.maxRetryDelayMs) {
+      multiplierExpression = options.maxRetryDelayMs;
     }
 
     try {

@@ -1,190 +1,249 @@
 # LocalFlow
 
-LocalFlow is a lightweight and flexible workflow orchestrator for Node.js and TypeScript. It allows you to define sequences of steps with native support for retries, timeouts, compensation (sagas), and idempotency.
+LocalFlow is a lightweight workflow orchestrator for Node.js and TypeScript.
 
-## Features
+It helps you model multi-step application flows with a small, typed API and first-class support for retries, timeouts, compensation, idempotent execution, lifecycle hooks, and parallel step groups.
 
-- 🚀 **Lightweight and Fast**: No heavy external dependencies.
-- 🛡️ **Robust**: Integrated error handling with retries and timeouts.
-- 🔄 **Sagas/Compensation**: Reverts successfully executed steps if something fails later.
-- 🆔 **Idempotency**: Ensures that the same operation is not executed multiple times.
-- 📝 **TypeScript First**: Fully typed for a better developer experience.
+## Why LocalFlow
 
-## Installation
+- Build workflows with a fluent, readable API.
+- Share state safely across steps with a typed runtime context.
+- Retry unstable operations with fixed, linear, or exponential backoff.
+- Protect slow steps with timeouts.
+- Roll back completed work with compensation handlers.
+- Avoid duplicate executions with pluggable idempotency stores.
+- Observe flow execution with hooks instead of framework-specific event systems.
 
-```bash
-npm install localflow
-```
+## Table of Contents
 
-## Basic Usage
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Documentation](#documentation)
+- [Feature Snapshot](#feature-snapshot)
+- [Development](#development)
+- [Project Status](#project-status)
 
-```typescript
-import { create } from 'localflow';
+## Overview
 
-const flow = create<{ userId: string }>('user-signup')
-  .step('validate-input', (ctx) => {
-    if (!ctx.input.userId) throw new Error('Invalid User ID');
-  })
-  .step('create-db-record', async (ctx) => {
-    // Logic to create record in the database
-    ctx.set('dbId', '12345');
-  })
-  .step('send-welcome-email', async (ctx) => {
-    const dbId = ctx.get<string>('dbId');
-    // Logic to send email
-  });
+LocalFlow is designed for application-level orchestration:
 
-const result = await flow.run({ userId: 'abc' });
-console.log(result.status); // 'completed'
-```
+- signup flows
+- payment pipelines
+- provisioning sequences
+- sync jobs
+- internal business processes
 
-## Advanced Features
+Each flow is composed of named steps. A step can:
 
-### Retries and Timeouts
+- read the input payload
+- write and read shared context state
+- define retry and timeout behavior
+- register a compensation function for rollback
 
-```typescript
-flow.step('external-api', async (ctx) => {
-  // Unstable API call
-}, {
-  retries: 3,
-  retryDelayMs: 1000,
-  timeoutMs: 5000
-});
-```
+Flows can also define parallel groups for independent operations that should run concurrently.
 
-### Compensation (Sagas)
+## Quick Start
 
-If a step fails, LocalFlow executes the compensation functions of all previously successfully completed steps, in reverse order.
+### Create a flow
 
-```typescript
-flow
-  .step('charge-credit-card', async (ctx) => {
-    await api.charge();
-  }, {
-    compensate: async (ctx) => {
-      await api.refund();
+```ts
+import { create } from "localflow";
+
+type SignupInput = {
+  email: string;
+  plan: "free" | "pro";
+};
+
+const signupFlow = create<SignupInput>("signup")
+  .step("validate-input", (ctx) => {
+    if (!ctx.input.email) {
+      throw new Error("Email is required");
     }
   })
-  .step('provision-service', async (ctx) => {
-    throw new Error('Provisioning failed');
+  .step("create-user", async (ctx) => {
+    const userId = "user_123";
+    ctx.set("userId", userId);
+  })
+  .step("send-welcome-email", async (ctx) => {
+    const userId = ctx.get<string>("userId");
+    if (!userId) {
+      throw new Error("Missing userId in context");
+    }
   });
-// If the second step fails, the refund() of the first will be executed.
+
+const result = await signupFlow.run({
+  email: "team@example.com",
+  plan: "pro",
+});
+
+console.log(result.status);
+console.log(result.steps);
 ```
 
-### Execução Paralela
+### Add retries and timeouts
 
-Você pode executar vários steps em paralelo utilizando o método `.parallel()`.
+```ts
+import { create } from "localflow";
 
-```typescript
-flow.parallel('parallel-block', [
-  {
-    name: 'send-email',
-    fn: async () => { /* ... */ }
+const flow = create("external-sync").step(
+  "call-api",
+  async () => {
+    // unstable network call
   },
   {
-    name: 'log-event',
-    fn: async () => { /* ... */ }
+    retries: 3,
+    retryDelayMs: 250,
+    backoffFactor: "exponential",
+    jitter: true,
+    maxRetryDelayMs: 5_000,
+    timeoutMs: 10_000,
   }
-], {
-  failFast: true // Opcional: Se qualquer um falhar, o bloco inteiro falha imediatamente
-});
+);
 ```
 
-### Idempotency
+### Add compensation
 
-LocalFlow supports idempotency persistence in memory (default) or external backends like Redis and DynamoDB.
+```ts
+import { create } from "localflow";
 
-#### In-Memory (Default)
+const flow = create("purchase")
+  .step(
+    "charge-card",
+    async () => {
+      // charge payment provider
+    },
+    {
+      compensate: async () => {
+        // refund if a later step fails
+      },
+    }
+  )
+  .step("provision-access", async () => {
+    throw new Error("Provisioning failed");
+  });
+```
 
-```typescript
-import { createIdempotencyStore } from 'localflow';
+### Run with idempotency
+
+```ts
+import { create, createIdempotencyStore } from "localflow";
 
 const store = createIdempotencyStore();
-const flow = create('payment-flow', { idempotency: store });
 
-const result = await flow.run(data, {
-  key: 'order-123',
-  ttlMs: 3600000 // 1 hour
+const flow = create("order-processing", {
+  idempotency: store,
+}).step("persist-order", async () => {
+  // write order
 });
+
+const result = await flow.run(
+  { orderId: "ord_123" },
+  {
+    key: "order:ord_123",
+    ttlMs: 60 * 60 * 1000,
+  }
+);
 ```
 
-#### Redis
+## Documentation
 
-To use Redis, you need to install the `redis` package as a dependency.
+- [Getting Started](./docs/getting-started.md)
+- [Core Concepts](./docs/core-concepts.md)
+- [Execution Model](./docs/guides/execution-model.md)
+- [Idempotency Guide](./docs/guides/idempotency.md)
+- [Hooks and Observability](./docs/guides/hooks-and-observability.md)
+- [Examples](./docs/examples.md)
+- [API Reference](./docs/api-reference.md)
+- [Troubleshooting](./docs/troubleshooting.md)
 
-```typescript
-import { createClient } from 'redis';
-import { redisIdempotencyStore } from 'localflow';
+## Feature Snapshot
 
-const redis = createClient();
-await redis.connect();
+### Sequential steps
 
-const store = redisIdempotencyStore(redis);
-const flow = create('payment-flow', { idempotency: store });
+Steps are executed in registration order.
+
+### Shared context
+
+Each flow run gets a `FlowContext<TInput>` with:
+
+- `input`
+- `get(key)`
+- `set(key, value)`
+- `has(key)`
+
+### Retries
+
+Per-step retries support:
+
+- `retries`
+- `retryDelayMs`
+- `backoffFactor: "fixed" | "linear" | "exponential"`
+- `jitter`
+- `maxRetryDelayMs`
+
+### Timeouts
+
+Use `timeoutMs` on a step to fail long-running work.
+
+### Compensation
+
+If a later step fails, previously completed steps can be compensated in reverse order.
+
+### Parallel groups
+
+Run independent steps concurrently with `.parallel(name, steps, options)`.
+
+By default, a parallel group only fails the flow when all steps in that group fail. With `failFast: true`, any failed step marks the group as failed.
+
+### Hooks
+
+LocalFlow supports lifecycle hooks for:
+
+- flow start
+- flow completion
+- flow failure
+- step start
+- step completion
+- step failure
+- compensation start
+- compensation completion
+
+### Idempotency stores
+
+Built-in options:
+
+- in-memory store
+- Redis adapter
+- DynamoDB adapter
+
+## Development
+
+### Install dependencies
+
+```bash
+npm install
 ```
 
-#### DynamoDB
+### Build
 
-To use DynamoDB, you need to install the `@aws-sdk/client-dynamodb` and `@aws-sdk/lib-dynamodb` packages as dependencies.
-
-```typescript
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { dynamoIdempotencyStore } from 'localflow';
-
-const client = new DynamoDBClient({});
-const store = dynamoIdempotencyStore(client, {
-  tableName: 'my-idempotency-table'
-});
-const flow = create('payment-flow', { idempotency: store });
+```bash
+npm run build
 ```
 
-## Execution Flow
+### Run tests
 
-```mermaid
-graph TD
-    A[Flow Start] --> B{Has Idempotency?}
-    B -- Yes --> C{Key in Cache?}
-    C -- Yes --> D[Return Cached Result]
-    C -- No --> E[Mark as Running]
-    B -- No --> F[Initialize Context]
-    E --> F
-    F --> G[Execute Step]
-    G --> H{Success?}
-    H -- Yes --> I{More Steps?}
-    I -- Yes --> G
-    I -- No --> J[Finish with Success]
-    H -- No --> K{Has Retry?}
-    K -- Yes --> L[Wait Delay and Re-execute]
-    L --> G
-    K -- No --> M[Start Compensation]
-    M --> N[Execute Compensate in Reverse Order]
-    N --> O[Finish with Failure]
-    J --> P{Save Cache?}
-    P -- Yes --> Q[Save Result]
-    P -- No --> R[End]
-    Q --> R
-    O --> S{Save Error?}
-    S -- Yes --> T[Save Error in Cache]
-    S -- No --> R
-    T --> R
+```bash
+npm test
 ```
 
-## Flow States
+### Type-check
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending
-    pending --> running
-    running --> completed: All steps OK
-    running --> failed: Step failed after retries
-    failed --> cancelled: Compensation finished
-    completed --> [*]
-    cancelled --> [*]
+```bash
+npm run typecheck
 ```
 
-## API Documentation
+## Project Status
 
-Access the generated JSDoc in the code for details on each class and method.
+LocalFlow already includes the core orchestration primitives documented above.
 
----
-Developed with ❤️ for efficient local flows.
+The repository also contains a roadmap in [NEXT_STEPS.md](./NEXT_STEPS.md) with ideas such as schema validation, cancellation support, richer errors, middleware, and deeper observability. Those items are not presented as stable features in this documentation unless they are implemented in the current source code.

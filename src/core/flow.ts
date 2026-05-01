@@ -7,13 +7,15 @@ import {
   IdempotentRunOptions,
   IdempotentRunResult,
   FlowNode,
-  ParallelOptions
+  ParallelOptions, FlowStartEvent, FlowCompleteEvent, FlowFailEvent, CompensateEvent, CompensateCompleteEvent,
+  StepStartEvent, StepCompleteEvent, StepStatus, StepFailEvent
 } from "../types";
 import {FlowContext} from "./context";
 import {runWithRetry} from "../utils/retry";
 import {runWithTimeout} from "../utils/timeout";
 import {State} from "./state";
 import {StepAlreadyExistsError, FlowAlreadyRunningError} from "../errors";
+import {safeCallHook} from "../utils/hooks";
 
 /**
  * Main class for defining and executing workflows.
@@ -92,9 +94,6 @@ export class Flow<TInput = unknown> {
    * @returns Consolidated result of the flow execution.
    */
   async run(input: TInput, idempotencyOptions?: IdempotentRunOptions): Promise<FlowResult> {
-    const cached = await this.preRunIdempotency(input, idempotencyOptions);
-    if (cached) return cached;
-
     const flattenedNodes = this.nodes.flatMap(node => {
       if (node.type === 'parallel') {
         return node.steps;
@@ -107,6 +106,14 @@ export class Flow<TInput = unknown> {
     const manager = new State(flattenedNodes);
     const results: StepResult[] = [];
     const executedSteps: Step<TInput>[] = [];
+
+    await safeCallHook<FlowStartEvent<TInput>>(
+      this.config.hooks?.onFlowStart,
+      { flowName: this.name, input, context: ctx }
+    )
+
+    const cached = await this.preRunIdempotency(input, idempotencyOptions);
+    if (cached) return cached;
 
     let result: FlowResult = {
       name: this.name,
@@ -122,11 +129,11 @@ export class Flow<TInput = unknown> {
 
         switch (node.type) {
           case "step":
-            stepResult = await this.executeStep(node.step, ctx, manager);
+            stepResult = await this.executeStep(node.step, ctx, manager, input);
             results.push(stepResult);
             break;
           case "parallel":
-            stepResults = await this.executeParallelSteps(node.steps, ctx, manager, node.options);
+            stepResults = await this.executeParallelSteps(node.steps, ctx, manager, input, node.options);
             results.push(...stepResults);
             
             const failedSteps = stepResults.filter(s => s.status === 'failed');
@@ -148,7 +155,29 @@ export class Flow<TInput = unknown> {
             for (const step of node.steps) {
               if (step.name !== stepResult.name && step.options?.compensate) {
                 try {
+                  await safeCallHook<CompensateEvent<TInput>>(
+                    this.config.hooks?.onCompensate,
+                    {
+                      flowName: this.name,
+                      stepName: step.name,
+                      input,
+                      context: ctx,
+                      error: stepResult.error
+                    }
+                  )
+
                   await step.options.compensate(ctx);
+
+                  await safeCallHook<CompensateCompleteEvent<TInput>>(
+                    this.config.hooks?.onCompensateComplete,
+                    {
+                      flowName: this.name,
+                      stepName: step.name,
+                      input,
+                      context: ctx,
+                      result: stepResult.error
+                    }
+                  )
                 } catch (e) {
                   // Ignore compensation error
                 }
@@ -181,8 +210,19 @@ export class Flow<TInput = unknown> {
       };
 
       await this.postRunIdempotency(result, idempotencyOptions);
+
+      await safeCallHook<FlowCompleteEvent<TInput>>(
+        this.config.hooks?.onFlowComplete,
+        { flowName: this.name, input, context: ctx, result }
+      )
+
       return result;
     } catch (err) {
+      await safeCallHook<FlowFailEvent<TInput>>(
+        this.config.hooks?.onFlowFail,
+        { flowName: this.name, input, context: ctx, result: err }
+      )
+
       return {
         ...result,
         status: "failed",
@@ -243,8 +283,14 @@ export class Flow<TInput = unknown> {
   private async executeStep(
     step: Step<TInput>,
     ctx: FlowContext<TInput>,
-    manager: State<TInput>
+    manager: State<TInput>,
+    input: TInput
   ): Promise<StepResult> {
+    await safeCallHook<StepStartEvent<TInput>>(
+      this.config.hooks?.onStepStart,
+      { flowName: this.name, stepName: step.name, input, context: ctx }
+    )
+
     const startedAt = Date.now();
     let attempts = 0;
 
@@ -268,30 +314,49 @@ export class Flow<TInput = unknown> {
         {
           retries: step.options?.retries ?? 0,
           retryDelayMs: step.options?.retryDelayMs ?? 0,
+          backoffFactor: step.options?.backoffFactor,
+          jitter: step.options?.jitter,
+          maxRetryDelayMs: step.options?.maxRetryDelayMs,
         }
       );
 
       manager.update(step, 'completed');
-      return {
+
+      const result = {
         name: step.name,
-        status: 'completed',
+        status: <StepStatus>'completed',
         attempts,
         durationMs: Date.now() - startedAt,
-      };
+      }
+
+      await safeCallHook<StepCompleteEvent<TInput>>(
+        this.config.hooks?.onStepComplete,
+        { flowName: this.name, stepName: step.name, input, context: ctx, result }
+      )
+
+      return result;
     } catch (error) {
       manager.update(step, 'failed');
-      return {
+
+      const result = {
         name: step.name,
-        status: 'failed',
+        status: <StepStatus>'failed',
         attempts,
         durationMs: Date.now() - startedAt,
         error,
-      };
+      }
+
+      await safeCallHook<StepFailEvent<TInput>>(
+        this.config.hooks?.onStepFail,
+        { flowName: this.name, stepName: step.name, input, context: ctx, error: result }
+      )
+
+      return result;
     }
   }
 
-  private async executeParallelSteps(steps: Step<TInput>[], ctx: FlowContext<TInput>, manager: State<TInput>, options?: ParallelOptions): Promise<StepResult[]> {
-    const promises = steps.map(step => this.executeStep(step, ctx, manager));
+  private async executeParallelSteps(steps: Step<TInput>[], ctx: FlowContext<TInput>, manager: State<TInput>, input: TInput, options?: ParallelOptions): Promise<StepResult[]> {
+    const promises = steps.map(step => this.executeStep(step, ctx, manager, input));
     const results: PromiseSettledResult<StepResult>[] = await Promise.allSettled(promises);
     
     return results.map(result => {

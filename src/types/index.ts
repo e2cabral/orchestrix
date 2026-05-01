@@ -27,7 +27,17 @@ export type StepOptions<TInput> = {
   /** Maximum time in milliseconds for the step execution. */
   timeoutMs?: number;
 
+  /**
+   * The backoff strategy to use.
+   * 'fixed': Fixed delay.
+   * 'linear': Linear increase (retryDelayMs * attempt).
+   * 'exponential': Exponential increase (retryDelayMs * 2^attempt).
+   */
+  backoffFactor?: 'fixed' | 'linear' | 'exponential';
+  /** Adds a random variation to the retry delay to avoid synchronized retries. */
   jitter?: boolean;
+  /** Maximum delay between retries in milliseconds. */
+  maxRetryDelayMs?: number;
   /** Compensation function executed if the flow fails in a subsequent step. */
   compensate?: (ctx: FlowContext<TInput>) => Promise<void> | void;
 }
@@ -167,4 +177,90 @@ export type IdempotentRunResult<T> = {
 export type FlowConfig = {
   /** Idempotency store implementation. */
   idempotency?: IdempotencyStore;
+  hooks?: FlowHooks<any>;
 };
+
+
+export type FlowHooks<TInput> = {
+  onFlowStart?: (event: FlowStartEvent<TInput>) => void | Promise<void>;
+  onFlowComplete?: (event: FlowCompleteEvent<TInput>) => void | Promise<void>;
+  onFlowFail?: (event: FlowFailEvent<TInput>) => void | Promise<void>;
+
+  onStepStart?: (event: StepStartEvent<TInput>) => void | Promise<void>;
+  onStepComplete?: (event: StepCompleteEvent<TInput>) => void | Promise<void>;
+  onStepFail?: (event: StepFailEvent<TInput>) => void | Promise<void>;
+
+  onCompensate?: (event: CompensateEvent<TInput>) => void | Promise<void>;
+  onCompensateComplete?: (event: CompensateCompleteEvent<TInput>) => void | Promise<void>;
+}
+
+export type StepStartEvent<TInput> = {
+  flowName: string;
+  stepName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+};
+
+export type StepCompleteEvent<TInput> = {
+  flowName: string;
+  stepName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+  result: unknown;
+};
+
+export type StepFailEvent<TInput> = {
+  flowName: string;
+  stepName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+  error: unknown;
+};
+
+export type CompensateCompleteEvent<TInput> = {
+  flowName: string;
+  stepName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+  result: unknown;
+};
+
+export type CompensateEvent<TInput> = {
+  flowName: string;
+  stepName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+  error: unknown;
+};
+
+export type FlowCompleteEvent<TInput> = {
+  flowName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+  result: unknown;
+};
+
+export type FlowStartEvent<TInput> = {
+  flowName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+};
+
+export type FlowFailEvent<TInput> = {
+  flowName: string;
+  input: TInput;
+  context: FlowContext<TInput>;
+  result: unknown;
+};
+
+export type FlowHookEvent<TInput> =
+  | StepStartEvent<TInput>
+  | StepCompleteEvent<TInput>
+  | StepFailEvent<TInput>
+  | CompensateEvent<TInput>
+  | CompensateCompleteEvent<TInput>
+  | FlowStartEvent<TInput>
+  | FlowCompleteEvent<TInput>
+  | FlowFailEvent<TInput>;
+
+export type FlowHookCallable<TInput> = (event: FlowHookEvent<TInput>) => Promise<void> | void;
