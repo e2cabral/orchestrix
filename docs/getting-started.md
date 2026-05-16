@@ -137,6 +137,25 @@ await paymentFlow.run(
 );
 ```
 
+### Validate input with Schema
+
+You can use any library implementing the [Standard Schema](https://github.com/standard-schema/standard-schema) protocol (like Zod or Valibot):
+
+```ts
+import { create } from "orchestrix";
+import { z } from "zod";
+
+const schema = z.object({ email: z.string().email() });
+
+const flow = create("validated-flow", { schema })
+  .step("process", (ctx) => {
+    console.log(ctx.input.email);
+  });
+
+const result = await flow.run({ email: "invalid" });
+console.log(result.status); // "failed"
+```
+
 ## Next steps
 
 - Read [Core Concepts](./core-concepts.md) for the mental model.

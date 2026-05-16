@@ -103,9 +103,10 @@ Checks whether a key is present.
 ### `FlowConfig`
 
 ```ts
-type FlowConfig = {
+type FlowConfig<TInput = unknown> = {
   idempotency?: IdempotencyStore;
   hooks?: FlowHooks<any>;
+  schema?: StandardSchemaV1<TInput>;
 };
 ```
 
@@ -226,3 +227,4 @@ Public error classes currently exported:
 - `FlowAlreadyRunningError`
 - `IdempotencyRecordNotFoundError`
 - `StepTimeoutError`
+- `FlowValidationError`

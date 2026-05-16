@@ -13,6 +13,7 @@ It helps you model multi-step application flows with a small, typed API and firs
 - Roll back completed work with compensation handlers.
 - Avoid duplicate executions with pluggable idempotency stores.
 - Observe flow execution with hooks instead of framework-specific event systems.
+- Validate input payloads with any Standard Schema v1 library (Zod, Valibot, etc.).
 
 ## Table of Contents
 
@@ -145,6 +146,32 @@ const result = await flow.run(
 );
 ```
 
+### Validate input with Schema
+
+```ts
+import { create } from "orchestrix";
+import { z } from "zod";
+
+const schema = z.object({
+  email: z.string().email(),
+  plan: z.enum(["free", "pro"]),
+});
+
+const flow = create("validated-signup", { schema })
+  .step("process", async (ctx) => {
+    // input is guaranteed to be valid here
+    console.log(ctx.input.email);
+  });
+
+const result = await flow.run({
+  email: "invalid-email",
+  plan: "pro",
+});
+
+console.log(result.status); // "failed"
+console.log(result.error);  // FlowValidationError
+```
+
 ## Documentation
 
 - [Getting Started](./docs/getting-started.md)
@@ -188,6 +215,10 @@ Use `timeoutMs` on a step to fail long-running work.
 ### Compensation
 
 If a later step fails, previously completed steps can be compensated in reverse order.
+
+### Input Validation
+
+Validate flow input using any library that supports [Standard Schema v1](https://github.com/standard-schema/standard-schema).
 
 ### Parallel groups
 
@@ -246,4 +277,4 @@ npm run typecheck
 
 Orchestrix already includes the core orchestration primitives documented above.
 
-The repository also contains a roadmap in [NEXT_STEPS.md](./NEXT_STEPS.md) with ideas such as schema validation, cancellation support, richer errors, middleware, and deeper observability. Those items are not presented as stable features in this documentation unless they are implemented in the current source code.
+The repository also contains a roadmap in [NEXT_STEPS.md](./NEXT_STEPS.md) with ideas such as cancellation support, richer errors, middleware, and deeper observability. Those items are not presented as stable features in this documentation unless they are implemented in the current source code.

@@ -194,3 +194,15 @@ With idempotency enabled:
 - completed results can be returned from cache
 - failed results can also be cached
 - concurrent duplicate runs can return `running` or throw `FlowAlreadyRunningError`
+
+## Input Validation (Schema)
+
+Orchestrix supports input validation before any step is executed using the [Standard Schema](https://github.com/standard-schema/standard-schema) protocol.
+
+When a `schema` is provided in `FlowConfig`:
+
+- it is validated immediately when `run()` is called
+- if validation fails, the flow returns a `failed` result without executing any steps
+- the error will be a `FlowValidationError` containing the list of validation issues
+
+This ensures steps always receive data that conforms to your expectations.
