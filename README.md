@@ -218,6 +218,38 @@ const flow = create("hooked-flow", {
 await flow.run({});
 ```
 
+### Built-in Logging (Jest-style)
+
+Orchestrix includes a built-in logger that provides clear, color-coded output for your flows, inspired by the Jest output format.
+
+```ts
+const flow = create("my-flow", { 
+  logging: true // Enable with default options
+});
+
+// Or with options
+const flow = create("my-flow", {
+  logging: {
+    enabled: true,
+    prefix: "WORKER-1"
+  }
+});
+```
+
+Example output:
+```text
+RUNS my-flow
+  ✓ step-1 (150ms)
+  ✓ step-2 (2.4s) (2 retries)
+  ✕ step-3 (10ms) (1 attempts)
+    Error: service unavailable
+
+FAIL my-flow
+Steps:    2 passed, 1 failed, 3 total
+Time:     2.56s
+----------------------------------------
+```
+
 ## Documentation
 
 - [Getting Started](./docs/getting-started.md)

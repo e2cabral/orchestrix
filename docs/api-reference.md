@@ -111,6 +111,16 @@ type FlowConfig<TInput = unknown> = {
   idempotency?: IdempotencyStore;
   hooks?: FlowHooks<any>;
   schema?: StandardSchemaV1<TInput>;
+  logging?: boolean | FlowLoggerOptions;
+};
+```
+
+### `FlowLoggerOptions`
+
+```ts
+type FlowLoggerOptions = {
+  enabled?: boolean;
+  prefix?: string;
 };
 ```
 

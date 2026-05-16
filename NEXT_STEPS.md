@@ -175,5 +175,5 @@ modificar o núcleo.
 | 🟡 Média   | Cancelamento com AbortSignal  | Padrão moderno, simples de implementar   | ✓ Implementado |
 | 🟢 Baixa   | Execução Paralela             | Mudança mais complexa na arquitetura     | ✓ Implementado |
 | 🟢 Baixa   | Controle de Concorrência      | Depende do caso de uso                   |               |
-| 🟢 Baixa   | Plugins/Middleware            | Depois de ter hooks funcionando          |               |
-| 🟢 Baixa   | Observabilidade/Traces        | Pode vir depois dos hooks                |               |
+| 🟢 Baixa   | Plugins/Middleware            | Depois de ter hooks funcionando          | ✓ Implementado (Logger) |
+| 🟢 Baixa   | Observabilidade/Traces        | Pode vir depois dos hooks                | ✓ Implementado (Logger) |

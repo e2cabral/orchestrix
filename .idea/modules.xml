@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/localflow.iml" filepath="$PROJECT_DIR$/.idea/localflow.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/orchestrix.iml" filepath="$PROJECT_DIR$/.idea/orchestrix.iml" />
     </modules>
   </component>
 </project>

@@ -180,6 +180,16 @@ export type IdempotentRunResult<T> = {
 };
 
 /**
+ * Configuration options for the built-in flow logger.
+ */
+export type FlowLoggerOptions = {
+  /** Whether the logger is enabled. Defaults to true. */
+  enabled?: boolean;
+  /** Optional prefix for all log messages. */
+  prefix?: string;
+};
+
+/**
  * Global flow configuration.
  */
 export type FlowConfig<TInput = unknown> = {
@@ -189,6 +199,8 @@ export type FlowConfig<TInput = unknown> = {
   hooks?: FlowHooks<any>;
   /** Schema to validate flow input using Standard Schema v1 protocol. */
   schema?: StandardSchemaV1<TInput>;
+  /** Logging configuration. */
+  logging?: boolean | FlowLoggerOptions;
 };
 
 /**
@@ -241,8 +253,8 @@ export type StepCompleteEvent<TInput> = {
   input: TInput;
   /** The current flow context. */
   context: FlowContext<TInput>;
-  /** The value returned by the step function. */
-  result: unknown;
+  /** The result of the step execution. */
+  result: StepResult;
 };
 
 /**
@@ -257,8 +269,8 @@ export type StepFailEvent<TInput> = {
   input: TInput;
   /** The current flow context. */
   context: FlowContext<TInput>;
-  /** The error that caused the failure. */
-  error: unknown;
+  /** The result containing the error and metadata. */
+  error: StepResult;
 };
 
 /**
@@ -304,7 +316,7 @@ export type FlowCompleteEvent<TInput> = {
   /** The current flow context. */
   context: FlowContext<TInput>;
   /** The consolidated result of the flow. */
-  result: unknown;
+  result: FlowResult;
 };
 
 /**

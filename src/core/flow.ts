@@ -15,8 +15,9 @@ import {FlowContext} from "./context";
 import {runWithRetry} from "../utils/retry";
 import {runWithTimeout} from "../utils/timeout";
 import {State} from "./state";
-import {StepAlreadyExistsError, FlowAlreadyRunningError, FlowValidationError} from "../errors";
+import {FlowAlreadyRunningError, FlowValidationError, StepAlreadyExistsError} from "../errors";
 import {safeCallHook} from "../utils/hooks";
+import {FlowLogger} from "../utils/logger";
 
 /**
  * Main class for defining and executing workflows.
@@ -98,16 +99,36 @@ export class Flow<TInput = unknown> {
     const startedAt = Date.now();
     const signal = options?.signal;
 
+    let logger: FlowLogger | undefined;
+    if (this.config.logging) {
+      const logOptions = typeof this.config.logging === "boolean"
+        ? { enabled: this.config.logging }
+        : this.config.logging;
+      logger = new FlowLogger(logOptions);
+    }
+
     if (this.config.schema) {
       const result = await this.config.schema['~standard'].validate(input);
       if (result.issues) {
-        return {
+        const error = new FlowValidationError(result.issues as unknown[]);
+        const flowResult: FlowResult = {
           name: this.name,
           status: 'failed',
           durationMs: Date.now() - startedAt,
           steps: [],
-          error: new FlowValidationError(result.issues as unknown[])
+          error
         };
+
+        if (logger) {
+          logger.onFlowFail({
+            flowName: this.name,
+            input,
+            context: new FlowContext(input, signal),
+            result: error
+          });
+        }
+
+        return flowResult;
       }
     }
 
@@ -128,6 +149,10 @@ export class Flow<TInput = unknown> {
       { flowName: this.name, input, context: ctx }
     )
 
+    if (logger) {
+      logger.onFlowStart({ flowName: this.name, input, context: ctx }, flattenedNodes.length);
+    }
+
     const cached = await this.preRunIdempotency(input, options);
     if (cached) return cached;
 
@@ -141,7 +166,7 @@ export class Flow<TInput = unknown> {
     try {
       for (const node of this.nodes) {
         if (signal?.aborted) {
-          await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input);
+          await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input, logger);
           result = {
             name: this.name,
             status: "cancelled",
@@ -149,6 +174,11 @@ export class Flow<TInput = unknown> {
             steps: results,
             error: signal.reason
           };
+
+          if (logger) {
+            logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
+          }
+
           return result;
         }
 
@@ -157,11 +187,11 @@ export class Flow<TInput = unknown> {
 
         switch (node.type) {
           case "step":
-            stepResult = await this.executeStep(node.step, ctx, manager, input);
+            stepResult = await this.executeStep(node.step, ctx, manager, input, logger);
             results.push(stepResult);
             break;
           case "parallel":
-            stepResults = await this.executeParallelSteps(node.steps, ctx, manager, input, node.options);
+            stepResults = await this.executeParallelSteps(node.steps, ctx, manager, input, node.options, logger);
             results.push(...stepResults);
             
             const failedSteps = stepResults.filter(s => s.status === 'failed');
@@ -194,6 +224,16 @@ export class Flow<TInput = unknown> {
                     }
                   )
 
+                  if (logger) {
+                    logger.onCompensate({
+                      flowName: this.name,
+                      stepName: step.name,
+                      input,
+                      context: ctx,
+                      error: stepResult.error
+                    });
+                  }
+
                   await step.options.compensate(ctx);
                   manager.update(step, 'cancelled');
 
@@ -214,7 +254,7 @@ export class Flow<TInput = unknown> {
             }
           }
 
-          await this.handleStepFailure(stepResult.error, ctx, manager, executedSteps, input);
+          await this.handleStepFailure(stepResult.error, ctx, manager, executedSteps, input, logger);
 
           result = {
             name: this.name,
@@ -225,6 +265,16 @@ export class Flow<TInput = unknown> {
           };
 
           await this.postRunIdempotency(result, options);
+
+          await safeCallHook<FlowFailEvent<TInput>>(
+            this.config.hooks?.onFlowFail,
+            { flowName: this.name, input, context: ctx, result: stepResult.error }
+          )
+
+          if (logger) {
+            logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
+          }
+
           return result;
         }
 
@@ -232,14 +282,20 @@ export class Flow<TInput = unknown> {
       }
 
       if (signal?.aborted) {
-        await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input);
-        return {
+        await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input, logger);
+        const cancelResult: FlowResult = {
           name: this.name,
           status: "cancelled",
           durationMs: Date.now() - startedAt,
           steps: results,
           error: signal.reason
         };
+
+        if (logger) {
+          logger.onFlowComplete({ flowName: this.name, input, context: ctx, result: cancelResult });
+        }
+
+        return cancelResult;
       }
 
       result = {
@@ -256,12 +312,20 @@ export class Flow<TInput = unknown> {
         { flowName: this.name, input, context: ctx, result }
       )
 
+      if (logger) {
+        logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
+      }
+
       return result;
     } catch (err) {
       await safeCallHook<FlowFailEvent<TInput>>(
         this.config.hooks?.onFlowFail,
         { flowName: this.name, input, context: ctx, result: err }
       )
+
+      if (logger) {
+        logger.onFlowFail({ flowName: this.name, input, context: ctx, result: err });
+      }
 
       return {
         ...result,
@@ -330,12 +394,17 @@ export class Flow<TInput = unknown> {
     step: Step<TInput>,
     ctx: FlowContext<TInput>,
     manager: State<TInput>,
-    input: TInput
+    input: TInput,
+    logger?: FlowLogger
   ): Promise<StepResult> {
     await safeCallHook<StepStartEvent<TInput>>(
       this.config.hooks?.onStepStart,
       { flowName: this.name, stepName: step.name, input, context: ctx }
     )
+
+    if (logger) {
+      logger.onStepStart({ flowName: this.name, stepName: step.name, input, context: ctx });
+    }
 
     const startedAt = Date.now();
     let attempts = 0;
@@ -381,6 +450,10 @@ export class Flow<TInput = unknown> {
         { flowName: this.name, stepName: step.name, input, context: ctx, result }
       )
 
+      if (logger) {
+        logger.onStepComplete({ flowName: this.name, stepName: step.name, input, context: ctx, result });
+      }
+
       return result;
     } catch (error) {
       manager.update(step, 'failed');
@@ -398,6 +471,10 @@ export class Flow<TInput = unknown> {
         { flowName: this.name, stepName: step.name, input, context: ctx, error: result }
       )
 
+      if (logger) {
+        logger.onStepFail({ flowName: this.name, stepName: step.name, input, context: ctx, error: result });
+      }
+
       return result;
     }
   }
@@ -412,8 +489,8 @@ export class Flow<TInput = unknown> {
    * @param options Parallel execution options (e.g., fail-fast).
    * @returns List of results for each step in the parallel block.
    */
-  private async executeParallelSteps(steps: Step<TInput>[], ctx: FlowContext<TInput>, manager: State<TInput>, input: TInput, options?: ParallelOptions): Promise<StepResult[]> {
-    const promises = steps.map(step => this.executeStep(step, ctx, manager, input));
+  private async executeParallelSteps(steps: Step<TInput>[], ctx: FlowContext<TInput>, manager: State<TInput>, input: TInput, options?: ParallelOptions, logger?: FlowLogger): Promise<StepResult[]> {
+    const promises = steps.map(step => this.executeStep(step, ctx, manager, input, logger));
     const results: PromiseSettledResult<StepResult>[] = await Promise.allSettled(promises);
     
     return results.map(result => {
@@ -439,7 +516,8 @@ export class Flow<TInput = unknown> {
     ctx: FlowContext<TInput>,
     manager: State<TInput>,
     executedSteps: Step<TInput>[],
-    input: TInput
+    input: TInput,
+    logger?: FlowLogger
   ): Promise<void> {
     for (const executedStep of [...executedSteps].reverse()) {
       if (executedStep.options?.compensate && manager.get(executedStep.name)?.status === 'completed') {
@@ -454,6 +532,16 @@ export class Flow<TInput = unknown> {
               error
             }
           )
+
+          if (logger) {
+            logger.onCompensate({
+              flowName: this.name,
+              stepName: executedStep.name,
+              input,
+              context: ctx,
+              error
+            });
+          }
 
           await executedStep.options.compensate(ctx);
           manager.update(executedStep, 'cancelled');
