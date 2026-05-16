@@ -1,4 +1,5 @@
 import {FlowContext} from "../core/context";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {Flow} from "../core/flow";
 
 /**
@@ -174,10 +175,11 @@ export type IdempotentRunResult<T> = {
 /**
  * Global flow configuration.
  */
-export type FlowConfig = {
+export type FlowConfig<TInput = unknown> = {
   /** Idempotency store implementation. */
   idempotency?: IdempotencyStore;
   hooks?: FlowHooks<any>;
+  schema?: StandardSchemaV1<TInput>;
 };
 
 

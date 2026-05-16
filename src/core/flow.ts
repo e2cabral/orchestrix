@@ -10,11 +10,12 @@ import {
   ParallelOptions, FlowStartEvent, FlowCompleteEvent, FlowFailEvent, CompensateEvent, CompensateCompleteEvent,
   StepStartEvent, StepCompleteEvent, StepStatus, StepFailEvent
 } from "../types";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {FlowContext} from "./context";
 import {runWithRetry} from "../utils/retry";
 import {runWithTimeout} from "../utils/timeout";
 import {State} from "./state";
-import {StepAlreadyExistsError, FlowAlreadyRunningError} from "../errors";
+import {StepAlreadyExistsError, FlowAlreadyRunningError, FlowValidationError} from "../errors";
 import {safeCallHook} from "../utils/hooks";
 
 /**
@@ -94,6 +95,21 @@ export class Flow<TInput = unknown> {
    * @returns Consolidated result of the flow execution.
    */
   async run(input: TInput, idempotencyOptions?: IdempotentRunOptions): Promise<FlowResult> {
+    const startedAt = Date.now();
+
+    if (this.config.schema) {
+      const result = await this.config.schema['~standard'].validate(input);
+      if (result.issues) {
+        return {
+          name: this.name,
+          status: 'failed',
+          durationMs: Date.now() - startedAt,
+          steps: [],
+          error: new FlowValidationError(result.issues as unknown[])
+        };
+      }
+    }
+
     const flattenedNodes = this.nodes.flatMap(node => {
       if (node.type === 'parallel') {
         return node.steps;
@@ -101,7 +117,6 @@ export class Flow<TInput = unknown> {
       return node.step;
     });
 
-    const startedAt = Date.now();
     const ctx = new FlowContext(input);
     const manager = new State(flattenedNodes);
     const results: StepResult[] = [];

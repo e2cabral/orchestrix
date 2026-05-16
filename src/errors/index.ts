@@ -32,3 +32,10 @@ export class StepTimeoutError extends OrchestrixError {
     this.name = 'StepTimeoutError';
   }
 }
+
+export class FlowValidationError extends OrchestrixError {
+  constructor(public readonly issues: unknown[]) {
+    super('Flow input validation failed');
+    this.name = 'FlowValidationError';
+  }
+}
