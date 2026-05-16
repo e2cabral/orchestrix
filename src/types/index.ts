@@ -190,6 +190,14 @@ export type FlowLoggerOptions = {
 };
 
 /**
+ * Interface for a flow plugin.
+ */
+export interface FlowPlugin<TInput = any> extends FlowHooks<TInput> {
+  /** Unique plugin name. */
+  name: string;
+}
+
+/**
  * Global flow configuration.
  */
 export type FlowConfig<TInput = unknown> = {
@@ -201,6 +209,8 @@ export type FlowConfig<TInput = unknown> = {
   schema?: StandardSchemaV1<TInput>;
   /** Logging configuration. */
   logging?: boolean | FlowLoggerOptions;
+  /** List of plugins to extend flow behavior. */
+  plugins?: FlowPlugin<TInput>[];
 };
 
 /**

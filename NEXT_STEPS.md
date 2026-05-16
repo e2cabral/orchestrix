@@ -150,7 +150,7 @@ qualquer lib que implemente o protocolo Standard Schema.
 - Garanta que o stack trace original seja preservado (use `cause` do ES2022)
 - Adicione um campo `metadata` opcional nos erros para dados extras
 
-### 10. 🔌 Plugins / Middleware
+### 10. 🔌 Plugins / Middleware [CONCLUÍDO]
 
 **O que é:** Um sistema de extensão que permite adicionar comportamentos transversais (logging, métricas, auth) sem
 modificar o núcleo.
@@ -175,5 +175,5 @@ modificar o núcleo.
 | 🟡 Média   | Cancelamento com AbortSignal  | Padrão moderno, simples de implementar   | ✓ Implementado |
 | 🟢 Baixa   | Execução Paralela             | Mudança mais complexa na arquitetura     | ✓ Implementado |
 | 🟢 Baixa   | Controle de Concorrência      | Depende do caso de uso                   |               |
-| 🟢 Baixa   | Plugins/Middleware            | Depois de ter hooks funcionando          | ✓ Implementado (Logger) |
-| 🟢 Baixa   | Observabilidade/Traces        | Pode vir depois dos hooks                | ✓ Implementado (Logger) |
+| 🟢 Baixa   | Plugins/Middleware            | Depois de ter hooks funcionando          | ✓ Implementado |
+| 🟢 Baixa   | Observabilidade/Traces        | Pode vir depois dos hooks                | ✓ Implementado |

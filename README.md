@@ -218,6 +218,28 @@ const flow = create("hooked-flow", {
 await flow.run({});
 ```
 
+### Plugins / Middleware
+
+Orchestrix supports a plugin system that allows you to extend the flow behavior with cross-cutting concerns like logging, metrics, or authentication.
+
+```ts
+import { create, createConsoleLoggerPlugin } from "orchestrix";
+
+const flow = create("my-flow", {
+  plugins: [
+    createConsoleLoggerPlugin({ prefix: "APP" }),
+    {
+      name: "my-custom-plugin",
+      onStepStart: (event) => {
+        console.log(`Step ${event.stepName} is starting...`);
+      }
+    }
+  ]
+});
+
+await flow.run({});
+```
+
 ### Built-in Logging (Jest-style)
 
 Orchestrix includes a built-in logger that provides clear, color-coded output for your flows, inspired by the Jest output format.
@@ -316,6 +338,10 @@ Orchestrix supports lifecycle hooks for:
 - step failure
 - compensation start
 - compensation completion
+
+### Plugins
+
+Extend the library with reusable middleware and extensions.
 
 ### Idempotency stores
 

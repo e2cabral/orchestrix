@@ -8,7 +8,7 @@ import {
   IdempotentRunResult,
   FlowNode,
   ParallelOptions, FlowStartEvent, FlowCompleteEvent, FlowFailEvent, CompensateEvent, CompensateCompleteEvent,
-  StepStartEvent, StepCompleteEvent, StepStatus, StepFailEvent
+  StepStartEvent, StepCompleteEvent, StepStatus, StepFailEvent, FlowHooks, FlowPlugin
 } from "../types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {FlowContext} from "./context";
@@ -144,10 +144,7 @@ export class Flow<TInput = unknown> {
     const results: StepResult[] = [];
     const executedSteps: Step<TInput>[] = [];
 
-    await safeCallHook<FlowStartEvent<TInput>>(
-      this.config.hooks?.onFlowStart,
-      { flowName: this.name, input, context: ctx }
-    )
+    await this.emit('onFlowStart', { flowName: this.name, input, context: ctx });
 
     if (logger) {
       logger.onFlowStart({ flowName: this.name, input, context: ctx }, flattenedNodes.length);
@@ -213,16 +210,13 @@ export class Flow<TInput = unknown> {
             for (const step of node.steps) {
               if (step.name !== stepResult.name && step.options?.compensate && manager.get(step.name)?.status === 'completed') {
                 try {
-                  await safeCallHook<CompensateEvent<TInput>>(
-                    this.config.hooks?.onCompensate,
-                    {
-                      flowName: this.name,
-                      stepName: step.name,
-                      input,
-                      context: ctx,
-                      error: stepResult.error
-                    }
-                  )
+                  await this.emit('onCompensate', {
+                    flowName: this.name,
+                    stepName: step.name,
+                    input,
+                    context: ctx,
+                    error: stepResult.error
+                  });
 
                   if (logger) {
                     logger.onCompensate({
@@ -237,16 +231,13 @@ export class Flow<TInput = unknown> {
                   await step.options.compensate(ctx);
                   manager.update(step, 'cancelled');
 
-                  await safeCallHook<CompensateCompleteEvent<TInput>>(
-                    this.config.hooks?.onCompensateComplete,
-                    {
-                      flowName: this.name,
-                      stepName: step.name,
-                      input,
-                      context: ctx,
-                      result: stepResult.error
-                    }
-                  )
+                  await this.emit('onCompensateComplete', {
+                    flowName: this.name,
+                    stepName: step.name,
+                    input,
+                    context: ctx,
+                    result: stepResult.error
+                  });
                 } catch (e) {
                   // Ignore compensation error
                 }
@@ -266,10 +257,7 @@ export class Flow<TInput = unknown> {
 
           await this.postRunIdempotency(result, options);
 
-          await safeCallHook<FlowFailEvent<TInput>>(
-            this.config.hooks?.onFlowFail,
-            { flowName: this.name, input, context: ctx, result: stepResult.error }
-          )
+          await this.emit('onFlowFail', { flowName: this.name, input, context: ctx, result: stepResult.error });
 
           if (logger) {
             logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
@@ -307,10 +295,7 @@ export class Flow<TInput = unknown> {
 
       await this.postRunIdempotency(result, options);
 
-      await safeCallHook<FlowCompleteEvent<TInput>>(
-        this.config.hooks?.onFlowComplete,
-        { flowName: this.name, input, context: ctx, result }
-      )
+      await this.emit('onFlowComplete', { flowName: this.name, input, context: ctx, result });
 
       if (logger) {
         logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
@@ -318,10 +303,7 @@ export class Flow<TInput = unknown> {
 
       return result;
     } catch (err) {
-      await safeCallHook<FlowFailEvent<TInput>>(
-        this.config.hooks?.onFlowFail,
-        { flowName: this.name, input, context: ctx, result: err }
-      )
+      await this.emit('onFlowFail', { flowName: this.name, input, context: ctx, result: err });
 
       if (logger) {
         logger.onFlowFail({ flowName: this.name, input, context: ctx, result: err });
@@ -397,10 +379,7 @@ export class Flow<TInput = unknown> {
     input: TInput,
     logger?: FlowLogger
   ): Promise<StepResult> {
-    await safeCallHook<StepStartEvent<TInput>>(
-      this.config.hooks?.onStepStart,
-      { flowName: this.name, stepName: step.name, input, context: ctx }
-    )
+    await this.emit('onStepStart', { flowName: this.name, stepName: step.name, input, context: ctx });
 
     if (logger) {
       logger.onStepStart({ flowName: this.name, stepName: step.name, input, context: ctx });
@@ -445,10 +424,7 @@ export class Flow<TInput = unknown> {
         durationMs: Date.now() - startedAt,
       }
 
-      await safeCallHook<StepCompleteEvent<TInput>>(
-        this.config.hooks?.onStepComplete,
-        { flowName: this.name, stepName: step.name, input, context: ctx, result }
-      )
+      await this.emit('onStepComplete', { flowName: this.name, stepName: step.name, input, context: ctx, result });
 
       if (logger) {
         logger.onStepComplete({ flowName: this.name, stepName: step.name, input, context: ctx, result });
@@ -466,10 +442,7 @@ export class Flow<TInput = unknown> {
         error,
       }
 
-      await safeCallHook<StepFailEvent<TInput>>(
-        this.config.hooks?.onStepFail,
-        { flowName: this.name, stepName: step.name, input, context: ctx, error: result }
-      )
+      await this.emit('onStepFail', { flowName: this.name, stepName: step.name, input, context: ctx, error: result });
 
       if (logger) {
         logger.onStepFail({ flowName: this.name, stepName: step.name, input, context: ctx, error: result });
@@ -522,16 +495,13 @@ export class Flow<TInput = unknown> {
     for (const executedStep of [...executedSteps].reverse()) {
       if (executedStep.options?.compensate && manager.get(executedStep.name)?.status === 'completed') {
         try {
-          await safeCallHook<CompensateEvent<TInput>>(
-            this.config.hooks?.onCompensate,
-            {
-              flowName: this.name,
-              stepName: executedStep.name,
-              input,
-              context: ctx,
-              error
-            }
-          )
+          await this.emit('onCompensate', {
+            flowName: this.name,
+            stepName: executedStep.name,
+            input,
+            context: ctx,
+            error
+          });
 
           if (logger) {
             logger.onCompensate({
@@ -546,16 +516,13 @@ export class Flow<TInput = unknown> {
           await executedStep.options.compensate(ctx);
           manager.update(executedStep, 'cancelled');
 
-          await safeCallHook<CompensateCompleteEvent<TInput>>(
-            this.config.hooks?.onCompensateComplete,
-            {
-              flowName: this.name,
-              stepName: executedStep.name,
-              input,
-              context: ctx,
-              result: error
-            }
-          )
+          await this.emit('onCompensateComplete', {
+            flowName: this.name,
+            stepName: executedStep.name,
+            input,
+            context: ctx,
+            result: error
+          });
         } catch (compensationError) {
           // Compensation failed, but we do not interrupt the original error flow
         }
@@ -617,5 +584,27 @@ export class Flow<TInput = unknown> {
     return {
       status: "executed"
     };
+  }
+
+  /**
+   * Emits a lifecycle event to both global hooks and registered plugins.
+   */
+  private async emit<K extends keyof FlowHooks<TInput>>(
+    hookName: K,
+    event: Parameters<NonNullable<FlowHooks<TInput>[K]>>[0]
+  ): Promise<void> {
+    // Call global hook
+    if (this.config.hooks && this.config.hooks[hookName]) {
+      await safeCallHook(this.config.hooks[hookName] as any, event);
+    }
+
+    // Call plugin hooks
+    if (this.config.plugins) {
+      for (const plugin of this.config.plugins) {
+        if (plugin[hookName]) {
+          await safeCallHook(plugin[hookName] as any, event);
+        }
+      }
+    }
   }
 }

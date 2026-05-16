@@ -14,8 +14,7 @@
     }
   },
   "files": [
-    "dist",
-    "docs"
+    "dist"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",

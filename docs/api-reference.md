@@ -9,6 +9,8 @@ export { create } from "./core/create";
 export { Flow } from "./core/flow";
 export { FlowContext } from "./core/context";
 export { createIdempotencyStore } from "./utils/idempotency";
+export { FlowLogger } from "./utils/logger";
+export { createConsoleLoggerPlugin } from "./plugins/console-logger";
 export * from "./adapters/index";
 export * from "./types";
 export * from "./errors";
@@ -112,7 +114,16 @@ type FlowConfig<TInput = unknown> = {
   hooks?: FlowHooks<any>;
   schema?: StandardSchemaV1<TInput>;
   logging?: boolean | FlowLoggerOptions;
+  plugins?: FlowPlugin<TInput>[];
 };
+```
+
+### `FlowPlugin<TInput>`
+
+```ts
+interface FlowPlugin<TInput = any> extends FlowHooks<TInput> {
+  name: string;
+}
 ```
 
 ### `FlowLoggerOptions`
