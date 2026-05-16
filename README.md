@@ -1,54 +1,35 @@
-# Orchestrix
+# Orchestrix 🚀
 
-Orchestrix is a lightweight workflow orchestrator for Node.js and TypeScript.
+Orchestrix is a lightweight, typed workflow orchestrator for Node.js and TypeScript.
 
-It helps you model multi-step application flows with a small, typed API and first-class support for retries, timeouts, compensation, idempotent execution, lifecycle hooks, and parallel step groups.
+It helps you model complex multi-step application flows with a small, fluent API and first-class support for retries, timeouts, compensation (rollback), idempotent execution, and lifecycle hooks.
 
-## Why Orchestrix
+---
 
-- Build workflows with a fluent, readable API.
-- Share state safely across steps with a typed runtime context.
-- Retry unstable operations with fixed, linear, or exponential backoff.
-- Protect slow steps with timeouts.
-- Roll back completed work with compensation handlers.
-- Avoid duplicate executions with pluggable idempotency stores.
-- Observe flow execution with hooks instead of framework-specific event systems.
-- Validate input payloads with any Standard Schema v1 library (Zod, Valibot, etc.).
+## Why Orchestrix?
 
-## Table of Contents
+- **Fluent API**: Build workflows that are easy to read and maintain.
+- **Typed Context**: Share state safely across steps with a runtime context.
+- **Resilience**: Built-in retry logic with fixed, linear, or exponential backoff.
+- **Safety**: Protect steps with timeouts and roll back work with compensation handlers.
+- **Efficiency**: Avoid duplicate executions using pluggable idempotency stores (Redis, DynamoDB).
+- **Observability**: Monitor execution with lifecycle hooks and a beautiful built-in logger.
+- **Validation**: Ensure data integrity with Standard Schema v1 (Zod, Valibot, etc.).
 
-- [Overview](#overview)
-- [Quick Start](#quick-start)
-- [Documentation](#documentation)
-- [Feature Snapshot](#feature-snapshot)
-- [Development](#development)
-- [Project Status](#project-status)
-
-## Overview
-
-Orchestrix is designed for application-level orchestration:
-
-- signup flows
-- payment pipelines
-- provisioning sequences
-- sync jobs
-- internal business processes
-
-Each flow is composed of named steps. A step can:
-
-- read the input payload
-- write and read shared context state
-- define retry and timeout behavior
-- register a compensation function for rollback
-
-Flows can also define parallel groups for independent operations that should run concurrently.
+---
 
 ## Quick Start
 
-### Create a flow
+### Installation
+
+```bash
+npm install @eddiecbrl/orchestrix
+```
+
+### Your First Flow
 
 ```ts
-import { create } from "orchestrix";
+import { create } from "@eddiecbrl/orchestrix";
 
 type SignupInput = {
   email: string;
@@ -57,19 +38,15 @@ type SignupInput = {
 
 const signupFlow = create<SignupInput>("signup")
   .step("validate-input", (ctx) => {
-    if (!ctx.input.email) {
-      throw new Error("Email is required");
-    }
+    if (!ctx.input.email) throw new Error("Email is required");
   })
   .step("create-user", async (ctx) => {
     const userId = "user_123";
-    ctx.set("userId", userId);
+    ctx.set("userId", userId); // Store data for next steps
   })
   .step("send-welcome-email", async (ctx) => {
     const userId = ctx.get<string>("userId");
-    if (!userId) {
-      throw new Error("Missing userId in context");
-    }
+    console.log(`Sending email to user ${userId}`);
   });
 
 const result = await signupFlow.run({
@@ -77,308 +54,134 @@ const result = await signupFlow.run({
   plan: "pro",
 });
 
-console.log(result.status);
-console.log(result.steps);
+console.log(result.status); // "completed"
 ```
 
-### Add retries and timeouts
+---
+
+## Core Features
+
+### 🔄 Retries and Timeouts
+
+Configure how unstable steps should behave. Orchestrix supports various backoff strategies and jitter.
 
 ```ts
-import { create } from "orchestrix";
-
-const flow = create("external-sync").step(
-  "call-api",
-  async () => {
-    // unstable network call
-  },
-  {
-    retries: 3,
-    retryDelayMs: 250,
-    backoffFactor: "exponential",
-    jitter: true,
-    maxRetryDelayMs: 5_000,
-    timeoutMs: 10_000,
-  }
-);
+flow.step("call-api", async () => { /* unstable work */ }, {
+  retries: 3,
+  retryDelayMs: 250,
+  backoffFactor: "exponential", // "fixed" | "linear" | "exponential"
+  jitter: true,
+  maxRetryDelayMs: 5_000,
+  timeoutMs: 10_000,
+});
 ```
 
-### Add compensation
+### ⏪ Compensation (Rollback)
+
+Define how to undo work if a later step fails. Orchestrix executes compensation functions in reverse order.
 
 ```ts
-import { create } from "orchestrix";
-
-const flow = create("purchase")
-  .step(
-    "charge-card",
-    async () => {
-      // charge payment provider
-    },
-    {
-      compensate: async () => {
-        // refund if a later step fails
-      },
-    }
-  )
+flow
+  .step("charge-card", async () => { /* ... */ }, {
+    compensate: async (ctx) => { /* refund */ }
+  })
   .step("provision-access", async () => {
-    throw new Error("Provisioning failed");
+    throw new Error("Failed to provision"); // Triggers compensation for 'charge-card'
   });
 ```
 
-### Run with idempotency
+### 🆔 Idempotency
+
+Avoid duplicate executions for the same request. Supports In-memory, Redis, and DynamoDB.
 
 ```ts
-import { create, createIdempotencyStore } from "orchestrix";
+import { create, redisIdempotencyStore } from "@eddiecbrl/orchestrix";
+import { createClient } from "redis";
 
-const store = createIdempotencyStore();
+const redis = createClient();
+const store = redisIdempotencyStore(redis);
 
-const flow = create("order-processing", {
-  idempotency: store,
-}).step("persist-order", async () => {
-  // write order
-});
+const flow = create("payment", { idempotency: store })
+  .step("process", async () => { /* ... */ });
 
-const result = await flow.run(
-  { orderId: "ord_123" },
-  {
-    key: "order:ord_123",
-    ttlMs: 60 * 60 * 1000,
-  }
-);
+// Run with a unique key
+await flow.run({ orderId: "123" }, { key: "order:123", ttlMs: 3600000 });
 ```
 
-### Validate input with Schema
+### ⚡ Parallel Execution
+
+Run independent steps concurrently.
 
 ```ts
-import { create } from "orchestrix";
+flow.parallel("batch-jobs", [
+  { name: "job-1", fn: async () => { /* ... */ } },
+  { name: "job-2", fn: async () => { /* ... */ } },
+], { failFast: true });
+```
+
+### 🛡️ Input Validation
+
+Use any library that supports [Standard Schema v1](https://github.com/standard-schema/standard-schema).
+
+```ts
 import { z } from "zod";
 
-const schema = z.object({
-  email: z.string().email(),
-  plan: z.enum(["free", "pro"]),
-});
+const schema = z.object({ email: z.string().email() });
+const flow = create("validated-flow", { schema });
 
-const flow = create("validated-signup", { schema })
-  .step("process", async (ctx) => {
-    // input is guaranteed to be valid here
-    console.log(ctx.input.email);
-  });
-
-const result = await flow.run({
-  email: "invalid-email",
-  plan: "pro",
-});
-
+const result = await flow.run({ email: "invalid-email" });
 console.log(result.status); // "failed"
-console.log(result.error);  // FlowValidationError
 ```
 
-### Cancellation Support (AbortSignal)
+### 🔌 Plugins and Lifecycle Hooks
+
+Extend Orchestrix with custom logic or use the built-in logger.
 
 ```ts
-const controller = new AbortController();
-
-const flow = create("cancellable-flow")
-  .step("long-running", async (ctx) => {
-    // steps can check if they should stop
-    if (ctx.signal?.aborted) return;
-    // ... logic
-  });
-
-// Cancel the flow externally
-setTimeout(() => controller.abort("User changed their mind"), 500);
-
-const result = await flow.run({}, { signal: controller.signal });
-
-console.log(result.status); // "cancelled"
-```
-
-### Parallel execution
-
-```ts
-const flow = create("parallel-flow")
-  .parallel("batch-jobs", [
-    { name: "job-1", run: async () => { /* ... */ } },
-    { name: "job-2", run: async () => { /* ... */ } },
-  ], { failFast: true });
-
-await flow.run({});
-```
-
-### Lifecycle Hooks
-
-```ts
-const flow = create("hooked-flow", {
-  hooks: {
-    onFlowStart: (event) => console.log(`Flow ${event.flowName} started`),
-    onStepFailure: (event) => console.error(`Step ${event.stepName} failed:`, event.error),
-  }
-})
-.step("do-something", async () => { /* ... */ });
-
-await flow.run({});
-```
-
-### Plugins / Middleware
-
-Orchestrix supports a plugin system that allows you to extend the flow behavior with cross-cutting concerns like logging, metrics, or authentication.
-
-```ts
-import { create, createConsoleLoggerPlugin } from "orchestrix";
-
 const flow = create("my-flow", {
+  logging: true, // Jest-style beautiful logs
+  hooks: {
+    onStepStart: (event) => console.log(`Starting ${event.stepName}`),
+  },
   plugins: [
-    createConsoleLoggerPlugin({ prefix: "APP" }),
     {
-      name: "my-custom-plugin",
-      onStepStart: (event) => {
-        console.log(`Step ${event.stepName} is starting...`);
-      }
+      name: "my-plugin",
+      onFlowComplete: (event) => { /* ... */ }
     }
   ]
 });
-
-await flow.run({});
 ```
 
-### Built-in Logging (Jest-style)
+---
 
-Orchestrix includes a built-in logger that provides clear, color-coded output for your flows, inspired by the Jest output format.
+## API Reference
 
-```ts
-const flow = create("my-flow", { 
-  logging: true // Enable with default options
-});
+### `create<TInput>(name: string, config?: FlowConfig)`
+Factory to create a new flow.
 
-// Or with options
-const flow = create("my-flow", {
-  logging: {
-    enabled: true,
-    prefix: "WORKER-1"
-  }
-});
-```
+### `FlowContext<TInput>`
+- `input`: The original flow input.
+- `get<T>(key: string)`: Retrieve shared state.
+- `set<T>(key: string, value: T)`: Store shared state.
+- `has(key: string)`: Check if key exists in state.
+- `signal`: `AbortSignal` for cancellation check.
 
-Example output:
-```text
-RUNS my-flow
-  ✓ step-1 (150ms)
-  ✓ step-2 (2.4s) (2 retries)
-  ✕ step-3 (10ms) (1 attempts)
-    Error: service unavailable
+### `FlowResult`
+- `status`: `'completed' | 'failed' | 'cancelled' | 'running'`.
+- `durationMs`: Total execution time.
+- `steps`: Array of `StepResult`.
+- `error`: Root cause of failure if status is `'failed'`.
 
-FAIL my-flow
-Steps:    2 passed, 1 failed, 3 total
-Time:     2.56s
-----------------------------------------
-```
-
-## Documentation
-
-- [Getting Started](./docs/getting-started.md)
-- [Core Concepts](./docs/core-concepts.md)
-- [Execution Model](./docs/guides/execution-model.md)
-- [Idempotency Guide](./docs/guides/idempotency.md)
-- [Hooks and Observability](./docs/guides/hooks-and-observability.md)
-- [Examples](./docs/examples.md)
-- [API Reference](./docs/api-reference.md)
-- [Troubleshooting](./docs/troubleshooting.md)
-
-## Feature Snapshot
-
-### Sequential steps
-
-Steps are executed in registration order.
-
-### Shared context
-
-Each flow run gets a `FlowContext<TInput>` with:
-
-- `input`
-- `get(key)`
-- `set(key, value)`
-- `has(key)`
-
-### Retries
-
-Per-step retries support:
-
-- `retries`
-- `retryDelayMs`
-- `backoffFactor: "fixed" | "linear" | "exponential"`
-- `jitter`
-- `maxRetryDelayMs`
-
-### Timeouts
-
-Use `timeoutMs` on a step to fail long-running work.
-
-### Compensation
-
-If a later step fails, previously completed steps can be compensated in reverse order.
-
-### Input Validation
-
-Validate flow input using any library that supports [Standard Schema v1](https://github.com/standard-schema/standard-schema).
-
-### Parallel groups
-
-Run independent steps concurrently with `.parallel(name, steps, options)`.
-
-By default, a parallel group only fails the flow when all steps in that group fail. With `failFast: true`, any failed step marks the group as failed.
-
-### Hooks
-
-Orchestrix supports lifecycle hooks for:
-
-- flow start
-- flow completion
-- flow failure
-- step start
-- step completion
-- step failure
-- compensation start
-- compensation completion
-
-### Plugins
-
-Extend the library with reusable middleware and extensions.
-
-### Idempotency stores
-
-Built-in options:
-
-- in-memory store
-- Redis adapter
-- DynamoDB adapter
+---
 
 ## Development
 
-### Install dependencies
-
 ```bash
-npm install
+npm install     # Install dependencies
+npm run build   # Build the library
+npm test        # Run tests with 100% coverage
 ```
 
-### Build
+## License
 
-```bash
-npm run build
-```
-
-### Run tests
-
-```bash
-npm test
-```
-
-### Type-check
-
-```bash
-npm run typecheck
-```
-
-## Project Status
-
-Orchestrix already includes the core orchestration primitives documented above.
-
-The repository also contains a roadmap in [NEXT_STEPS.md](./NEXT_STEPS.md) with ideas such as cancellation support, richer errors, middleware, and deeper observability. Those items are not presented as stable features in this documentation unless they are implemented in the current source code.
+MIT

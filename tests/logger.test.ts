@@ -19,10 +19,10 @@ describe('FlowLogger', () => {
 
     await flow.run({});
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/RUNS.*test-flow/));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✓.*step-1/));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✓.*step-2/));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/PASS.*test-flow/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/RUNNING.*test-flow/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✔.*step-1/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✔.*step-2/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/SUCCESS.*test-flow/));
   });
 
   it('should log failures and retries', async () => {
@@ -39,7 +39,7 @@ describe('FlowLogger', () => {
     // O primeiro erro não é logado como onStepFail se houver retry?
     // Na verdade, o executeStep só chama onStepFail se todas as tentativas falharem.
     // Se passar no retry, ele chama onStepComplete com attempts > 1.
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✓.*fail-step/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✔.*fail-step/));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('(1 retries)'));
   });
 
@@ -49,9 +49,9 @@ describe('FlowLogger', () => {
 
     await flow.run({});
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✕.*fail-step/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/✘.*fail-step/));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Fatal'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/FAIL.*fatal-flow/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/FAILURE.*fatal-flow/));
   });
 
   it('should log compensations', async () => {

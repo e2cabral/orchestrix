@@ -18,6 +18,7 @@ import {State} from "./state";
 import {FlowAlreadyRunningError, FlowValidationError, StepAlreadyExistsError} from "../errors";
 import {safeCallHook} from "../utils/hooks";
 import {FlowLogger} from "../utils/logger";
+import {stepStorage} from "../utils/storage";
 
 /**
  * Main class for defining and executing workflows.
@@ -25,6 +26,7 @@ import {FlowLogger} from "../utils/logger";
  */
 export class Flow<TInput = unknown> {
   private nodes: FlowNode<TInput>[] = [];
+  private plugins: FlowPlugin<TInput>[] = [];
 
   /**
    * @param name Flow name.
@@ -32,8 +34,40 @@ export class Flow<TInput = unknown> {
    */
   constructor(
     public readonly name: string,
-    public readonly config: FlowConfig = {}
+    public readonly config: FlowConfig<TInput> = {}
   ) {
+    this.initPlugins();
+  }
+
+  /**
+   * Initializes plugins and built-in logger if enabled.
+   */
+  private initPlugins(): void {
+    if (this.config.logging) {
+      const logOptions = typeof this.config.logging === "boolean"
+        ? { enabled: this.config.logging }
+        : this.config.logging;
+      this.plugins.push(new FlowLogger(logOptions));
+    }
+
+    if (this.config.plugins) {
+      this.plugins.push(...this.config.plugins);
+    }
+  }
+
+  /**
+   * Ensures that a step name is unique within the flow.
+   * @throws {StepAlreadyExistsError} If the name is already in use.
+   */
+  private ensureUniqueStepName(name: string): void {
+    const exists = this.nodes.some(node => {
+      if (node.type === 'step') return node.step.name === name;
+      return node.steps.some(s => s.name === name);
+    });
+
+    if (exists) {
+      throw new StepAlreadyExistsError(name);
+    }
   }
 
   /**
@@ -45,19 +79,7 @@ export class Flow<TInput = unknown> {
    * @throws Error if a step with the same name already exists.
    */
   step(name: string, fn: Step<TInput>['fn'], options?: StepOptions<TInput>): this {
-    const stepAlreadyExists = this.nodes.some(node => {
-      switch (node.type) {
-        case 'step':
-          return node.step.name === name;
-        case 'parallel':
-          return node.steps.some(step => step.name === name);
-      }
-    });
-
-    if (stepAlreadyExists) {
-      throw new StepAlreadyExistsError(name);
-    }
-
+    this.ensureUniqueStepName(name);
     this.nodes.push({type: 'step', step: {name, fn, options}});
     return this;
   }
@@ -72,21 +94,18 @@ export class Flow<TInput = unknown> {
    * @throws {StepAlreadyExistsError} If a step or parallel block with the same name already exists.
    */
   parallel(name: string, steps: Step<TInput>[], options?: ParallelOptions) {
-    const stepAlreadyExists = this.nodes.some(node => {
-      switch (node.type) {
-        case 'step':
-          return node.step.name === name;
-        case 'parallel':
-          return node.steps.some(step => step.name === name);
-      }
-    });
-
-    if (stepAlreadyExists) {
-      throw new StepAlreadyExistsError(name);
-    }
-
+    this.ensureUniqueStepName(name);
     this.nodes.push({type: 'parallel', steps, options});
     return this;
+  }
+
+  /**
+   * Validates flow input using the provided schema.
+   */
+  private async validateInput(input: TInput): Promise<FlowValidationError | null> {
+    if (!this.config.schema) return null;
+    const result = await this.config.schema['~standard'].validate(input);
+    return result.issues ? new FlowValidationError(result.issues as unknown[]) : null;
   }
 
   /**
@@ -98,224 +117,161 @@ export class Flow<TInput = unknown> {
   async run(input: TInput, options?: IdempotentRunOptions & { signal?: AbortSignal }): Promise<FlowResult> {
     const startedAt = Date.now();
     const signal = options?.signal;
-
-    let logger: FlowLogger | undefined;
-    if (this.config.logging) {
-      const logOptions = typeof this.config.logging === "boolean"
-        ? { enabled: this.config.logging }
-        : this.config.logging;
-      logger = new FlowLogger(logOptions);
-    }
-
-    if (this.config.schema) {
-      const result = await this.config.schema['~standard'].validate(input);
-      if (result.issues) {
-        const error = new FlowValidationError(result.issues as unknown[]);
-        const flowResult: FlowResult = {
-          name: this.name,
-          status: 'failed',
-          durationMs: Date.now() - startedAt,
-          steps: [],
-          error
-        };
-
-        if (logger) {
-          logger.onFlowFail({
-            flowName: this.name,
-            input,
-            context: new FlowContext(input, signal),
-            result: error
-          });
-        }
-
-        return flowResult;
-      }
-    }
-
-    const flattenedNodes = this.nodes.flatMap(node => {
-      if (node.type === 'parallel') {
-        return node.steps;
-      }
-      return node.step;
-    });
-
     const ctx = new FlowContext(input, signal);
+
+    // 1. Validation
+    const validationError = await this.validateInput(input);
+    if (validationError) {
+      const errorResult: FlowResult = {
+        name: this.name,
+        status: 'failed',
+        durationMs: Date.now() - startedAt,
+        steps: [],
+        error: validationError
+      };
+      await this.emit('onFlowFail', { flowName: this.name, input, context: ctx, result: validationError });
+      return errorResult;
+    }
+
+    // 2. Setup
+    const flattenedNodes = this.nodes.flatMap(node => node.type === 'parallel' ? node.steps : node.step);
     const manager = new State(flattenedNodes);
     const results: StepResult[] = [];
     const executedSteps: Step<TInput>[] = [];
 
-    await this.emit('onFlowStart', { flowName: this.name, input, context: ctx });
-
-    if (logger) {
-      logger.onFlowStart({ flowName: this.name, input, context: ctx }, flattenedNodes.length);
-    }
-
+    // 3. Idempotency Check
     const cached = await this.preRunIdempotency(input, options);
     if (cached) return cached;
 
-    let result: FlowResult = {
-      name: this.name,
-      status: "pending",
-      durationMs: 0,
-      steps: results
-    };
+    await this.emit('onFlowStart', { flowName: this.name, input, context: ctx });
+
+    let finalResult: FlowResult | null = null;
 
     try {
       for (const node of this.nodes) {
+        // Check for cancellation before each step
         if (signal?.aborted) {
-          await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input, logger);
-          result = {
-            name: this.name,
-            status: "cancelled",
-            durationMs: Date.now() - startedAt,
-            steps: results,
-            error: signal.reason
-          };
-
-          if (logger) {
-            logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
-          }
-
-          return result;
+          finalResult = await this.handleCancellation(signal.reason, ctx, manager, executedSteps, input, results, startedAt);
+          break;
         }
 
         let stepResult: StepResult | undefined;
         let stepResults: StepResult[] = [];
 
-        switch (node.type) {
-          case "step":
-            stepResult = await this.executeStep(node.step, ctx, manager, input, logger);
-            results.push(stepResult);
-            break;
-          case "parallel":
-            stepResults = await this.executeParallelSteps(node.steps, ctx, manager, input, node.options, logger);
-            results.push(...stepResults);
-            
-            const failedSteps = stepResults.filter(s => s.status === 'failed');
-            
-            if (node.options?.failFast) {
-              stepResult = failedSteps.length > 0 ? failedSteps[0] : undefined;
-            } else {
-              stepResult = failedSteps.length === node.steps.length ? failedSteps[0] : undefined;
-            }
-            break;
-        }
-
-        if (!stepResult && stepResults.length === 0) {
-          continue;
+        if (node.type === 'step') {
+          stepResult = await this.executeStep(node.step, ctx, manager, input);
+          results.push(stepResult);
+        } else {
+          stepResults = await this.executeParallelSteps(node.steps, ctx, manager, input, node.options);
+          results.push(...stepResults);
+          
+          const failedSteps = stepResults.filter(s => s.status === 'failed');
+          if (node.options?.failFast) {
+            stepResult = failedSteps.length > 0 ? failedSteps[0] : undefined;
+          } else {
+            stepResult = failedSteps.length === node.steps.length ? failedSteps[0] : undefined;
+          }
         }
 
         if (stepResult?.status === 'failed') {
-          if (node.type === 'parallel') {
-            for (const step of node.steps) {
-              if (step.name !== stepResult.name && step.options?.compensate && manager.get(step.name)?.status === 'completed') {
-                try {
-                  await this.emit('onCompensate', {
-                    flowName: this.name,
-                    stepName: step.name,
-                    input,
-                    context: ctx,
-                    error: stepResult.error
-                  });
-
-                  if (logger) {
-                    logger.onCompensate({
-                      flowName: this.name,
-                      stepName: step.name,
-                      input,
-                      context: ctx,
-                      error: stepResult.error
-                    });
-                  }
-
-                  await step.options.compensate(ctx);
-                  manager.update(step, 'cancelled');
-
-                  await this.emit('onCompensateComplete', {
-                    flowName: this.name,
-                    stepName: step.name,
-                    input,
-                    context: ctx,
-                    result: stepResult.error
-                  });
-                } catch (e) {
-                  // Ignore compensation error
-                }
-              }
-            }
-          }
-
-          await this.handleStepFailure(stepResult.error, ctx, manager, executedSteps, input, logger);
-
-          result = {
-            name: this.name,
-            status: "failed",
-            durationMs: Date.now() - startedAt,
-            steps: results,
-            error: stepResult.error
-          };
-
-          await this.postRunIdempotency(result, options);
-
-          await this.emit('onFlowFail', { flowName: this.name, input, context: ctx, result: stepResult.error });
-
-          if (logger) {
-            logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
-          }
-
-          return result;
+          const currentSuccessfulSteps = node.type === 'parallel'
+            ? node.steps.filter(s => manager.get(s.name).status === 'completed')
+            : [];
+          
+          finalResult = await this.handleFailure(
+            stepResult.error, 
+            ctx, 
+            manager, 
+            [...executedSteps, ...currentSuccessfulSteps], 
+            input, 
+            results, 
+            startedAt, 
+            options
+          );
+          break;
         }
 
         executedSteps.push(...(node.type === 'step' ? [node.step] : node.steps));
       }
 
-      if (signal?.aborted) {
-        await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input, logger);
-        const cancelResult: FlowResult = {
+      // Final check for cancellation
+      if (!finalResult && signal?.aborted) {
+        finalResult = await this.handleCancellation(signal.reason, ctx, manager, executedSteps, input, results, startedAt);
+      }
+
+      // Success
+      if (!finalResult) {
+        finalResult = {
           name: this.name,
-          status: "cancelled",
+          status: "completed",
           durationMs: Date.now() - startedAt,
-          steps: results,
-          error: signal.reason
+          steps: results
         };
-
-        if (logger) {
-          logger.onFlowComplete({ flowName: this.name, input, context: ctx, result: cancelResult });
-        }
-
-        return cancelResult;
+        await this.postRunIdempotency(finalResult, options);
+        await this.emit('onFlowComplete', { flowName: this.name, input, context: ctx, result: finalResult });
       }
 
-      result = {
-        name: this.name,
-        status: "completed",
-        durationMs: Date.now() - startedAt,
-        steps: results
-      };
-
-      await this.postRunIdempotency(result, options);
-
-      await this.emit('onFlowComplete', { flowName: this.name, input, context: ctx, result });
-
-      if (logger) {
-        logger.onFlowComplete({ flowName: this.name, input, context: ctx, result });
-      }
-
-      return result;
+      return finalResult;
     } catch (err) {
       await this.emit('onFlowFail', { flowName: this.name, input, context: ctx, result: err });
-
-      if (logger) {
-        logger.onFlowFail({ flowName: this.name, input, context: ctx, result: err });
-      }
-
       return {
-        ...result,
+        name: this.name,
         status: "failed",
         durationMs: Date.now() - startedAt,
+        steps: results,
         error: err
       };
     }
+  }
+
+  /**
+   * Handles flow cancellation.
+   */
+  private async handleCancellation(
+    reason: unknown,
+    ctx: FlowContext<TInput>,
+    manager: State<TInput>,
+    executedSteps: Step<TInput>[],
+    input: TInput,
+    results: StepResult[],
+    startedAt: number
+  ): Promise<FlowResult> {
+    await this.handleCompensations(reason, ctx, manager, executedSteps, input);
+    const result: FlowResult = {
+      name: this.name,
+      status: "cancelled",
+      durationMs: Date.now() - startedAt,
+      steps: results,
+      error: reason
+    };
+    await this.emit('onFlowComplete', { flowName: this.name, input, context: ctx, result });
+    return result;
+  }
+
+  /**
+   * Handles step failure.
+   */
+  private async handleFailure(
+    error: unknown,
+    ctx: FlowContext<TInput>,
+    manager: State<TInput>,
+    executedSteps: Step<TInput>[],
+    input: TInput,
+    results: StepResult[],
+    startedAt: number,
+    options?: IdempotentRunOptions
+  ): Promise<FlowResult> {
+    await this.handleCompensations(error, ctx, manager, executedSteps, input);
+    const result: FlowResult = {
+      name: this.name,
+      status: "failed",
+      durationMs: Date.now() - startedAt,
+      steps: results,
+      error
+    };
+    await this.postRunIdempotency(result, options);
+    await this.emit('onFlowFail', { flowName: this.name, input, context: ctx, result: error });
+    return result;
   }
 
   /**
@@ -376,14 +332,9 @@ export class Flow<TInput = unknown> {
     step: Step<TInput>,
     ctx: FlowContext<TInput>,
     manager: State<TInput>,
-    input: TInput,
-    logger?: FlowLogger
+    input: TInput
   ): Promise<StepResult> {
     await this.emit('onStepStart', { flowName: this.name, stepName: step.name, input, context: ctx });
-
-    if (logger) {
-      logger.onStepStart({ flowName: this.name, stepName: step.name, input, context: ctx });
-    }
 
     const startedAt = Date.now();
     let attempts = 0;
@@ -391,28 +342,30 @@ export class Flow<TInput = unknown> {
     manager.update(step, 'running');
 
     try {
-      await runWithRetry(
-        async () => {
-          attempts++;
-          const execution = step.fn(ctx);
+      await stepStorage.run({ flowName: this.name, stepName: step.name }, () => 
+        runWithRetry(
+          async () => {
+            attempts++;
+            const execution = step.fn(ctx);
 
-          if (step.options?.timeoutMs) {
-            return runWithTimeout(
-              Promise.resolve(execution),
-              step.options.timeoutMs
-            );
+            if (step.options?.timeoutMs) {
+              return runWithTimeout(
+                Promise.resolve(execution),
+                step.options.timeoutMs
+              );
+            }
+
+            return execution;
+          },
+          {
+            retries: step.options?.retries ?? 0,
+            retryDelayMs: step.options?.retryDelayMs ?? 0,
+            backoffFactor: step.options?.backoffFactor,
+            jitter: step.options?.jitter,
+            maxRetryDelayMs: step.options?.maxRetryDelayMs,
+            signal: ctx.signal,
           }
-
-          return execution;
-        },
-        {
-          retries: step.options?.retries ?? 0,
-          retryDelayMs: step.options?.retryDelayMs ?? 0,
-          backoffFactor: step.options?.backoffFactor,
-          jitter: step.options?.jitter,
-          maxRetryDelayMs: step.options?.maxRetryDelayMs,
-          signal: ctx.signal,
-        }
+        )
       );
 
       manager.update(step, 'completed');
@@ -425,10 +378,6 @@ export class Flow<TInput = unknown> {
       }
 
       await this.emit('onStepComplete', { flowName: this.name, stepName: step.name, input, context: ctx, result });
-
-      if (logger) {
-        logger.onStepComplete({ flowName: this.name, stepName: step.name, input, context: ctx, result });
-      }
 
       return result;
     } catch (error) {
@@ -444,81 +393,52 @@ export class Flow<TInput = unknown> {
 
       await this.emit('onStepFail', { flowName: this.name, stepName: step.name, input, context: ctx, error: result });
 
-      if (logger) {
-        logger.onStepFail({ flowName: this.name, stepName: step.name, input, context: ctx, error: result });
-      }
-
       return result;
     }
   }
 
   /**
    * Executes multiple steps in parallel and collects their results.
-   * 
-   * @param steps List of steps to execute concurrently.
-   * @param ctx The current flow context.
-   * @param manager The state manager to track steps status.
-   * @param input The initial flow input.
-   * @param options Parallel execution options (e.g., fail-fast).
-   * @returns List of results for each step in the parallel block.
    */
-  private async executeParallelSteps(steps: Step<TInput>[], ctx: FlowContext<TInput>, manager: State<TInput>, input: TInput, options?: ParallelOptions, logger?: FlowLogger): Promise<StepResult[]> {
-    const promises = steps.map(step => this.executeStep(step, ctx, manager, input, logger));
-    const results: PromiseSettledResult<StepResult>[] = await Promise.allSettled(promises);
-    
-    return results.map(result => {
-      if (result.status === 'fulfilled') {
-        return result.value;
-      }
-      
-      return {
-        name: 'unknown',
-        status: 'failed',
-        attempts: 0,
-        durationMs: 0,
-        error: result.reason,
-      };
-    });
+  private async executeParallelSteps(
+    steps: Step<TInput>[],
+    ctx: FlowContext<TInput>,
+    manager: State<TInput>,
+    input: TInput,
+    options?: ParallelOptions
+  ): Promise<StepResult[]> {
+    const promises = steps.map(step => this.executeStep(step, ctx, manager, input));
+    const results = await Promise.all(promises);
+    return results;
   }
 
   /**
-   * Handles step failures, executing necessary compensations in reverse order.
+   * Handles step compensations in reverse order of execution.
    */
-  private async handleStepFailure(
+  private async handleCompensations(
     error: unknown,
     ctx: FlowContext<TInput>,
     manager: State<TInput>,
     executedSteps: Step<TInput>[],
-    input: TInput,
-    logger?: FlowLogger
+    input: TInput
   ): Promise<void> {
-    for (const executedStep of [...executedSteps].reverse()) {
-      if (executedStep.options?.compensate && manager.get(executedStep.name)?.status === 'completed') {
+    for (const step of [...executedSteps].reverse()) {
+      if (step.options?.compensate && manager.get(step.name)?.status === 'completed') {
         try {
           await this.emit('onCompensate', {
             flowName: this.name,
-            stepName: executedStep.name,
+            stepName: step.name,
             input,
             context: ctx,
             error
           });
 
-          if (logger) {
-            logger.onCompensate({
-              flowName: this.name,
-              stepName: executedStep.name,
-              input,
-              context: ctx,
-              error
-            });
-          }
-
-          await executedStep.options.compensate(ctx);
-          manager.update(executedStep, 'cancelled');
+          await step.options.compensate(ctx);
+          manager.update(step, 'cancelled');
 
           await this.emit('onCompensateComplete', {
             flowName: this.name,
-            stepName: executedStep.name,
+            stepName: step.name,
             input,
             context: ctx,
             result: error
@@ -599,10 +519,11 @@ export class Flow<TInput = unknown> {
     }
 
     // Call plugin hooks
-    if (this.config.plugins) {
-      for (const plugin of this.config.plugins) {
-        if (plugin[hookName]) {
-          await safeCallHook(plugin[hookName] as any, event);
+    if (this.plugins.length > 0) {
+      for (const plugin of this.plugins) {
+        const hook = plugin[hookName];
+        if (typeof hook === 'function') {
+          await safeCallHook(hook.bind(plugin) as any, event);
         }
       }
     }

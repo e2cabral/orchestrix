@@ -75,9 +75,25 @@ describe('Flow Plugins', () => {
 
     await flow.run({});
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[TEST] Flow started: test-console-logger'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[TEST] Flow completed: test-console-logger'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/RUNNING.*test-console-logger/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/SUCCESS.*test-console-logger/));
     
+    logSpy.mockRestore();
+  });
+
+  it('should intercept console logs inside steps', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const flow = create('test-intercept', {
+      plugins: [createConsoleLoggerPlugin({ prefix: 'TEST', intercept: true })]
+    }).step('s1', () => {
+      console.log('internal log');
+    });
+
+    await flow.run({});
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/\[TEST\].*\[s1\].*→/), 'internal log');
+
     logSpy.mockRestore();
   });
 
@@ -94,5 +110,22 @@ describe('Flow Plugins', () => {
 
     expect(globalHook).toHaveBeenCalled();
     expect(pluginHook).toHaveBeenCalled();
+  });
+
+  it('should cover all ConsoleLoggerPlugin hooks', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    
+    const flow = create('test-full-logger', {
+      plugins: [createConsoleLoggerPlugin({ prefix: 'TEST' })]
+    })
+    .step('s1', () => {}, { compensate: () => {} })
+    .step('s2', () => { throw new Error('fail'); });
+
+    await flow.run({});
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/FAILURE.*test-full-logger/));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/↺.*Compensating:.*s1/));
+    
+    logSpy.mockRestore();
   });
 });

@@ -144,4 +144,74 @@ describe("Flow", () => {
     expect(fast.durationMs).toBeGreaterThanOrEqual(0);
     expect(slow.durationMs).toBeGreaterThanOrEqual(30);
   });
+
+  it("testa métodos adicionais do FlowContext", async () => {
+    let hasResult = false;
+    await create("context-extra")
+      .step("test", (ctx) => {
+        ctx.set("foo", "bar");
+        hasResult = ctx.has("foo");
+      })
+      .run({});
+    
+    expect(hasResult).toBe(true);
+  });
+
+  it("testa métodos adicionais do State", async () => {
+    // Isso é testado indiretamente, mas vamos garantir cobertura
+    const result = await create("state-extra")
+      .step("test", () => {})
+      .run({});
+    expect(result.status).toBe("completed");
+  });
+
+  it("deve cobrir getStatus do State", async () => {
+    const { State } = await import("../src/core/state");
+    const state = new State([{ name: "s1", fn: () => {} }]);
+    expect(state.getStatus({ name: "s1", fn: () => {} })).toBe("pending");
+    expect(state.getStatus({ name: "missing", fn: () => {} })).toBe("pending");
+  });
+
+  it("deve cobrir a emissão de erro de step no Flow", async () => {
+    const onStepFail = vi.fn();
+    await create("fail-emit", { hooks: { onStepFail } })
+      .step("s1", () => { throw new Error("fail"); })
+      .run({});
+    expect(onStepFail).toHaveBeenCalled();
+  });
+
+  it("deve lançar erro ao adicionar parallel com nome duplicado", () => {
+    expect(() => {
+      create("duplicate-parallel")
+        .step("s1", () => {})
+        .parallel("s1", []);
+    }).toThrow("Step with name 's1' already exists");
+  });
+
+  it("deve lidar com falha em step dentro de parallel (failFast)", async () => {
+    const result = await create("parallel-fail")
+      .parallel("p1", [
+        { name: "s1", fn: () => {} },
+        { name: "s2", fn: () => { throw new Error("parallel fail"); } }
+      ], { failFast: true })
+      .run({});
+    
+    expect(result.status).toBe("failed");
+    expect(result.error.message).toBe("parallel fail");
+  });
+
+  it("deve lidar com erro de validação (schema)", async () => {
+    const mockSchema = {
+      "~standard": {
+        version: 1,
+        validate: () => ({ issues: [{ message: "invalid" }] })
+      }
+    };
+    const result = await create("schema-fail", { schema: mockSchema as any })
+      .step("s1", () => {})
+      .run({});
+    
+    expect(result.status).toBe("failed");
+    expect(result.error.name).toBe("FlowValidationError");
+  });
 });

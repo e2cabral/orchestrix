@@ -126,4 +126,38 @@ describe("DynamoDB Idempotency Store", () => {
     await store.delete("test-key");
     expect(mockSend).toHaveBeenCalled();
   });
+
+  it("deve lançar erro se PutCommand falhar com erro genérico", async () => {
+    const error = new Error("Generic error");
+    mockSend.mockRejectedValueOnce(error);
+
+    await expect(store.start("key")).rejects.toThrow("Generic error");
+  });
+
+  it("deve lançar erro se UpdateCommand falhar com erro genérico", async () => {
+    const error = new Error("Generic error");
+    mockSend.mockRejectedValueOnce(error);
+
+    await expect(store.complete("key", {})).rejects.toThrow("Generic error");
+  });
+
+  it("deve lançar erro se fail falhar com ConditionalCheckFailedException", async () => {
+    const error = new Error("ConditionalCheckFailedException");
+    error.name = "ConditionalCheckFailedException";
+    mockSend.mockRejectedValueOnce(error);
+
+    await expect(store.fail("missing-key", new Error("fail")))
+      .rejects.toThrow(IdempotencyRecordNotFoundError);
+  });
+
+  it("deve lançar erro se fail falhar com erro genérico", async () => {
+    const error = new Error("Generic error");
+    mockSend.mockRejectedValueOnce(error);
+
+    await expect(store.fail("key", new Error("fail"))).rejects.toThrow("Generic error");
+  });
+
+  it("cleanup não deve fazer nada", async () => {
+    await expect(store.cleanup()).resolves.toBeUndefined();
+  });
 });

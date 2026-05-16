@@ -59,11 +59,74 @@ describe("Redis Idempotency Store", () => {
     mockGet.mockResolvedValueOnce(null);
     mockSet.mockResolvedValueOnce(null); // SET NX falhou
     
-    // Na implementação atual, ele não busca o registro de novo se o SET NX falhar.
-    // E ele retorna acquired: true incorretamente.
+    const existing = { key: "k", status: "running" };
+    mockGet.mockResolvedValueOnce(JSON.stringify(existing));
     
     const result = await store.start("k");
     expect(result.acquired).toBe(false);
-    expect(result.record).toBeDefined();
+    expect(result.record).toEqual(existing);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
+  it("deve concluir um registro", async () => {
+    const record = { key: "k", status: "running" };
+    mockGet.mockResolvedValueOnce(JSON.stringify(record));
+    mockPTTL.mockResolvedValueOnce(1000);
+    mockSet.mockResolvedValueOnce("OK");
+
+    await store.complete("k", { data: 1 });
+
+    expect(mockSet).toHaveBeenCalledWith("k", expect.stringContaining("\"status\":\"completed\""), { PX: 1000 });
+  });
+
+  it("deve marcar como falha um registro", async () => {
+    const record = { key: "k", status: "running" };
+    mockGet.mockResolvedValueOnce(JSON.stringify(record));
+    mockPTTL.mockResolvedValueOnce(1000);
+    mockSet.mockResolvedValueOnce("OK");
+
+    await store.fail("k", new Error("fail"));
+
+    expect(mockSet).toHaveBeenCalledWith("k", expect.stringContaining("\"status\":\"failed\""), { PX: 1000 });
+  });
+
+  it("deve deletar um registro", async () => {
+    mockDel.mockResolvedValueOnce(1);
+    await store.delete("k");
+    expect(mockDel).toHaveBeenCalledWith("k");
+  });
+
+  it("deve lançar erro se tentar completar registro inexistente", async () => {
+    mockGet.mockResolvedValueOnce(null);
+    await expect(store.complete("k", {})).rejects.toThrow(IdempotencyRecordNotFoundError);
+  });
+
+  it("deve deletar se tentar completar registro já expirado", async () => {
+    const record = { key: "k", status: "running", expiresAt: Date.now() - 1000 };
+    mockGet.mockResolvedValueOnce(JSON.stringify(record));
+    mockDel.mockResolvedValueOnce(1);
+
+    await store.complete("k", {});
+    expect(mockDel).toHaveBeenCalledWith("k");
+  });
+
+  it("deve lançar erro se tentar falhar registro inexistente", async () => {
+    mockGet.mockResolvedValueOnce(null);
+    await expect(store.fail("k", {})).rejects.toThrow(IdempotencyRecordNotFoundError);
+  });
+
+  it("deve lidar com erro customizado ao falhar", async () => {
+    const record = { key: "k", status: "running" };
+    mockGet.mockResolvedValueOnce(JSON.stringify(record));
+    mockPTTL.mockResolvedValueOnce(1000);
+    mockSet.mockResolvedValueOnce("OK");
+
+    await store.fail("k", "string error");
+
+    expect(mockSet).toHaveBeenCalledWith("k", expect.stringContaining("\"message\":\"string error\""), { PX: 1000 });
+  });
+
+  it("cleanup não deve fazer nada", async () => {
+    await expect(store.cleanup()).resolves.toBeUndefined();
   });
 });

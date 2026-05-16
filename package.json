@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "test": "vitest",
+    "test:coverage": "vitest --coverage",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -26,6 +27,7 @@
     "@aws-sdk/lib-dynamodb": "^3.1038.0",
     "@types/node": "^25.6.0",
     "@types/redis": "^4.0.10",
+    "@vitest/coverage-v8": "^4.1.6",
     "redis": "^5.12.1",
     "tsup": "^8.5.1",
     "typescript": "^5.5.3",

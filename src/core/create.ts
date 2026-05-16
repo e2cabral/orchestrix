@@ -8,4 +8,4 @@ import {FlowConfig} from "../types";
  * @param config Optional configurations (e.g., idempotency store).
  * @returns A new Flow instance.
  */
-export const create = <TInput = unknown>(name: string, config?: FlowConfig) => new Flow<TInput>(name, config);
+export const create = <TInput = unknown>(name: string, config?: FlowConfig<TInput>) => new Flow<TInput>(name, config);
