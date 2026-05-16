@@ -7,8 +7,9 @@ export class FlowContext<TInput> {
 
   /**
    * @param input Initial data provided to the flow.
+   * @param signal {AbortSignal} Optional signal to cancel the flow execution.
    */
-  constructor(public readonly input: TInput) {}
+  constructor(public readonly input: TInput, public readonly signal?: AbortSignal) {}
 
   /**
    * Gets a value from the context.

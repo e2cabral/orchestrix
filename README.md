@@ -172,6 +172,26 @@ console.log(result.status); // "failed"
 console.log(result.error);  // FlowValidationError
 ```
 
+### Cancellation Support (AbortSignal)
+
+```ts
+const controller = new AbortController();
+
+const flow = create("cancellable-flow")
+  .step("long-running", async (ctx) => {
+    // steps can check if they should stop
+    if (ctx.signal?.aborted) return;
+    // ... logic
+  });
+
+// Cancel the flow externally
+setTimeout(() => controller.abort("User changed their mind"), 500);
+
+const result = await flow.run(input, { signal: controller.signal });
+
+console.log(result.status); // "cancelled"
+```
+
 ## Documentation
 
 - [Getting Started](./docs/getting-started.md)

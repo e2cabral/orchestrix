@@ -91,11 +91,12 @@ export class Flow<TInput = unknown> {
   /**
    * Runs the flow with the provided data.
    * @param input Input data for the flow.
-   * @param idempotencyOptions Options for idempotent execution.
+   * @param options Options for idempotent execution and optional signal to cancel the flow.
    * @returns Consolidated result of the flow execution.
    */
-  async run(input: TInput, idempotencyOptions?: IdempotentRunOptions): Promise<FlowResult> {
+  async run(input: TInput, options?: IdempotentRunOptions & { signal?: AbortSignal }): Promise<FlowResult> {
     const startedAt = Date.now();
+    const signal = options?.signal;
 
     if (this.config.schema) {
       const result = await this.config.schema['~standard'].validate(input);
@@ -117,7 +118,7 @@ export class Flow<TInput = unknown> {
       return node.step;
     });
 
-    const ctx = new FlowContext(input);
+    const ctx = new FlowContext(input, signal);
     const manager = new State(flattenedNodes);
     const results: StepResult[] = [];
     const executedSteps: Step<TInput>[] = [];
@@ -127,7 +128,7 @@ export class Flow<TInput = unknown> {
       { flowName: this.name, input, context: ctx }
     )
 
-    const cached = await this.preRunIdempotency(input, idempotencyOptions);
+    const cached = await this.preRunIdempotency(input, options);
     if (cached) return cached;
 
     let result: FlowResult = {
@@ -139,6 +140,18 @@ export class Flow<TInput = unknown> {
 
     try {
       for (const node of this.nodes) {
+        if (signal?.aborted) {
+          await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input);
+          result = {
+            name: this.name,
+            status: "cancelled",
+            durationMs: Date.now() - startedAt,
+            steps: results,
+            error: signal.reason
+          };
+          return result;
+        }
+
         let stepResult: StepResult | undefined;
         let stepResults: StepResult[] = [];
 
@@ -168,7 +181,7 @@ export class Flow<TInput = unknown> {
         if (stepResult?.status === 'failed') {
           if (node.type === 'parallel') {
             for (const step of node.steps) {
-              if (step.name !== stepResult.name && step.options?.compensate) {
+              if (step.name !== stepResult.name && step.options?.compensate && manager.get(step.name)?.status === 'completed') {
                 try {
                   await safeCallHook<CompensateEvent<TInput>>(
                     this.config.hooks?.onCompensate,
@@ -182,6 +195,7 @@ export class Flow<TInput = unknown> {
                   )
 
                   await step.options.compensate(ctx);
+                  manager.update(step, 'cancelled');
 
                   await safeCallHook<CompensateCompleteEvent<TInput>>(
                     this.config.hooks?.onCompensateComplete,
@@ -200,7 +214,7 @@ export class Flow<TInput = unknown> {
             }
           }
 
-          await this.handleStepFailure(stepResult.error, ctx, manager, executedSteps);
+          await this.handleStepFailure(stepResult.error, ctx, manager, executedSteps, input);
 
           result = {
             name: this.name,
@@ -210,11 +224,22 @@ export class Flow<TInput = unknown> {
             error: stepResult.error
           };
 
-          await this.postRunIdempotency(result, idempotencyOptions);
+          await this.postRunIdempotency(result, options);
           return result;
         }
 
         executedSteps.push(...(node.type === 'step' ? [node.step] : node.steps));
+      }
+
+      if (signal?.aborted) {
+        await this.handleStepFailure(signal.reason, ctx, manager, executedSteps, input);
+        return {
+          name: this.name,
+          status: "cancelled",
+          durationMs: Date.now() - startedAt,
+          steps: results,
+          error: signal.reason
+        };
       }
 
       result = {
@@ -224,7 +249,7 @@ export class Flow<TInput = unknown> {
         steps: results
       };
 
-      await this.postRunIdempotency(result, idempotencyOptions);
+      await this.postRunIdempotency(result, options);
 
       await safeCallHook<FlowCompleteEvent<TInput>>(
         this.config.hooks?.onFlowComplete,
@@ -338,6 +363,7 @@ export class Flow<TInput = unknown> {
           backoffFactor: step.options?.backoffFactor,
           jitter: step.options?.jitter,
           maxRetryDelayMs: step.options?.maxRetryDelayMs,
+          signal: ctx.signal,
         }
       );
 
@@ -412,13 +438,36 @@ export class Flow<TInput = unknown> {
     error: unknown,
     ctx: FlowContext<TInput>,
     manager: State<TInput>,
-    executedSteps: Step<TInput>[]
+    executedSteps: Step<TInput>[],
+    input: TInput
   ): Promise<void> {
     for (const executedStep of [...executedSteps].reverse()) {
-      if (executedStep.options?.compensate) {
+      if (executedStep.options?.compensate && manager.get(executedStep.name)?.status === 'completed') {
         try {
+          await safeCallHook<CompensateEvent<TInput>>(
+            this.config.hooks?.onCompensate,
+            {
+              flowName: this.name,
+              stepName: executedStep.name,
+              input,
+              context: ctx,
+              error
+            }
+          )
+
           await executedStep.options.compensate(ctx);
           manager.update(executedStep, 'cancelled');
+
+          await safeCallHook<CompensateCompleteEvent<TInput>>(
+            this.config.hooks?.onCompensateComplete,
+            {
+              flowName: this.name,
+              stepName: executedStep.name,
+              input,
+              context: ctx,
+              result: error
+            }
+          )
         } catch (compensationError) {
           // Compensation failed, but we do not interrupt the original error flow
         }

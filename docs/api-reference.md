@@ -54,25 +54,29 @@ parallel(
 
 Registers a parallel execution node.
 
-### `flow.run(input, idempotencyOptions?)`
+### `flow.run(input, options?)`
 
 ```ts
-run(input: TInput, idempotencyOptions?: IdempotentRunOptions): Promise<FlowResult>
+run(input: TInput, options?: IdempotentRunOptions & { signal?: AbortSignal }): Promise<FlowResult>
 ```
 
-Executes the flow.
+Executes the flow. Supports an optional `AbortSignal` for cancellation.
 
 ## `FlowContext`
 
-### `new FlowContext(input)`
+### `new FlowContext(input, signal?)`
 
 ```ts
-new FlowContext<TInput>(input: TInput)
+new FlowContext<TInput>(input: TInput, signal?: AbortSignal)
 ```
 
 ### `context.input`
 
 The original flow input.
+
+### `context.signal`
+
+The optional `AbortSignal` for cancellation check.
 
 ### `context.get(key)`
 

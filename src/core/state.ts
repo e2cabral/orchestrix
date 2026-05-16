@@ -26,6 +26,17 @@ export class State<TInput> {
   }
 
   /**
+   * Gets the result of a step by its name.
+   * @param name Step name.
+   * @returns The current status.
+   */
+  get(name: string) {
+    return {
+      status: this.manager.get(name) ?? 'pending'
+    };
+  }
+
+  /**
    * Gets the current status of a step.
    * @param step The desired step.
    * @returns The current status.

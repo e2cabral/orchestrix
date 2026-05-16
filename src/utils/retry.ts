@@ -6,6 +6,8 @@ type RetryOptions = {
   retries: number;
   /** Delay between attempts in milliseconds. */
   retryDelayMs: number;
+  /** Optional signal to cancel the execution. */
+  signal?: AbortSignal;
 
   /**
    * The backoff strategy to use.
@@ -33,6 +35,10 @@ export async function runWithRetry<T>(
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= options.retries; attempt++) {
+    if (options.signal?.aborted) {
+      throw options.signal.reason;
+    }
+
     let multiplierExpression: number;
 
     switch (options.backoffFactor) {
@@ -60,9 +66,13 @@ export async function runWithRetry<T>(
       lastError = error;
 
       if (attempt < options.retries && options.retryDelayMs > 0) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, options.jitter ? Math.random() * multiplierExpression : multiplierExpression)
-        );
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(resolve, options.jitter ? Math.random() * multiplierExpression : multiplierExpression);
+          options.signal?.addEventListener('abort', () => {
+            clearTimeout(timeout);
+            reject(options.signal?.reason);
+          }, { once: true });
+        });
       }
     }
   }
