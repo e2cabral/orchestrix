@@ -87,11 +87,18 @@ export type Step<TInput> = {
   options?: StepOptions<TInput>;
 }
 
+/**
+ * Internal representation of a node in the flow graph (either a single step or a parallel block).
+ */
 export type FlowNode<TInput> =
   | { type: 'step', step: Step<TInput> }
   | { type: 'parallel', steps: Step<TInput>[], options?: ParallelOptions };
 
+/**
+ * Options for parallel step execution.
+ */
 export type ParallelOptions = {
+  /** If true, the first step failure will cause the entire parallel block to fail immediately. */
   failFast?: boolean;
 };
 
@@ -176,85 +183,159 @@ export type IdempotentRunResult<T> = {
  * Global flow configuration.
  */
 export type FlowConfig<TInput = unknown> = {
-  /** Idempotency store implementation. */
+  /** Idempotency store implementation to avoid duplicate executions. */
   idempotency?: IdempotencyStore;
+  /** Hooks to observe flow and step execution events. */
   hooks?: FlowHooks<any>;
+  /** Schema to validate flow input using Standard Schema v1 protocol. */
   schema?: StandardSchemaV1<TInput>;
 };
 
-
+/**
+ * Collection of hooks that can be used to observe the lifecycle of a flow.
+ */
 export type FlowHooks<TInput> = {
+  /** Called when the flow starts. */
   onFlowStart?: (event: FlowStartEvent<TInput>) => void | Promise<void>;
+  /** Called when the flow completes successfully. */
   onFlowComplete?: (event: FlowCompleteEvent<TInput>) => void | Promise<void>;
+  /** Called when the flow fails. */
   onFlowFail?: (event: FlowFailEvent<TInput>) => void | Promise<void>;
 
+  /** Called when a step starts. */
   onStepStart?: (event: StepStartEvent<TInput>) => void | Promise<void>;
+  /** Called when a step completes successfully. */
   onStepComplete?: (event: StepCompleteEvent<TInput>) => void | Promise<void>;
+  /** Called when a step fails. */
   onStepFail?: (event: StepFailEvent<TInput>) => void | Promise<void>;
 
+  /** Called when a compensation starts. */
   onCompensate?: (event: CompensateEvent<TInput>) => void | Promise<void>;
+  /** Called when a compensation completes. */
   onCompensateComplete?: (event: CompensateCompleteEvent<TInput>) => void | Promise<void>;
 }
 
+/**
+ * Event payload for when a step starts.
+ */
 export type StepStartEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The name of the step. */
   stepName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
 };
 
+/**
+ * Event payload for when a step completes.
+ */
 export type StepCompleteEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The name of the step. */
   stepName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
+  /** The value returned by the step function. */
   result: unknown;
 };
 
+/**
+ * Event payload for when a step fails.
+ */
 export type StepFailEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The name of the step. */
   stepName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
+  /** The error that caused the failure. */
   error: unknown;
 };
 
+/**
+ * Event payload for when a compensation completes.
+ */
 export type CompensateCompleteEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The name of the step. */
   stepName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
+  /** The value returned by the compensation function. */
   result: unknown;
 };
 
+/**
+ * Event payload for when a compensation is triggered.
+ */
 export type CompensateEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The name of the step. */
   stepName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
+  /** The error that triggered the compensation. */
   error: unknown;
 };
 
+/**
+ * Event payload for when a flow completes.
+ */
 export type FlowCompleteEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
+  /** The consolidated result of the flow. */
   result: unknown;
 };
 
+/**
+ * Event payload for when a flow starts.
+ */
 export type FlowStartEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
 };
 
+/**
+ * Event payload for when a flow fails.
+ */
 export type FlowFailEvent<TInput> = {
+  /** The name of the flow. */
   flowName: string;
+  /** The initial input of the flow. */
   input: TInput;
+  /** The current flow context. */
   context: FlowContext<TInput>;
+  /** The error or result that caused the failure. */
   result: unknown;
 };
 
+/**
+ * Union type of all possible flow hook events.
+ */
 export type FlowHookEvent<TInput> =
   | StepStartEvent<TInput>
   | StepCompleteEvent<TInput>
@@ -265,4 +346,7 @@ export type FlowHookEvent<TInput> =
   | FlowCompleteEvent<TInput>
   | FlowFailEvent<TInput>;
 
+/**
+ * Type for a callable hook function.
+ */
 export type FlowHookCallable<TInput> = (event: FlowHookEvent<TInput>) => Promise<void> | void;

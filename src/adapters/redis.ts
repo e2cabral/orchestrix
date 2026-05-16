@@ -2,6 +2,12 @@ import {IdempotencyRecord, IdempotencyStore} from "../types";
 import {RedisClientType} from "redis";
 import {IdempotencyRecordNotFoundError} from "../errors";
 
+/**
+ * Creates an idempotency store implementation using Redis.
+ * 
+ * @param redis An instance of RedisClientType from the 'redis' package.
+ * @returns An IdempotencyStore instance.
+ */
 export function redisIdempotencyStore(redis: RedisClientType): IdempotencyStore {
   return {
     async cleanup() {

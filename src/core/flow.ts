@@ -293,7 +293,13 @@ export class Flow<TInput = unknown> {
   }
 
   /**
-   * Executes a single flow step, handling retries and timeout.
+   * Executes a single flow step, handling retries, timeout, and hooks.
+   * 
+   * @param step The step definition to execute.
+   * @param ctx The current flow context.
+   * @param manager The state manager to track step status.
+   * @param input The initial flow input.
+   * @returns The result of the step execution.
    */
   private async executeStep(
     step: Step<TInput>,
@@ -370,6 +376,16 @@ export class Flow<TInput = unknown> {
     }
   }
 
+  /**
+   * Executes multiple steps in parallel and collects their results.
+   * 
+   * @param steps List of steps to execute concurrently.
+   * @param ctx The current flow context.
+   * @param manager The state manager to track steps status.
+   * @param input The initial flow input.
+   * @param options Parallel execution options (e.g., fail-fast).
+   * @returns List of results for each step in the parallel block.
+   */
   private async executeParallelSteps(steps: Step<TInput>[], ctx: FlowContext<TInput>, manager: State<TInput>, input: TInput, options?: ParallelOptions): Promise<StepResult[]> {
     const promises = steps.map(step => this.executeStep(step, ctx, manager, input));
     const results: PromiseSettledResult<StepResult>[] = await Promise.allSettled(promises);
