@@ -1,6 +1,6 @@
 {
   "name": "@eddiecbrl/orchestrix",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local workflow orchestration for Node.js and TypeScript",
   "type": "module",
   "main": "./dist/index.cjs",
