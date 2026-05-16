@@ -187,9 +187,35 @@ const flow = create("cancellable-flow")
 // Cancel the flow externally
 setTimeout(() => controller.abort("User changed their mind"), 500);
 
-const result = await flow.run(input, { signal: controller.signal });
+const result = await flow.run({}, { signal: controller.signal });
 
 console.log(result.status); // "cancelled"
+```
+
+### Parallel execution
+
+```ts
+const flow = create("parallel-flow")
+  .parallel("batch-jobs", [
+    { name: "job-1", run: async () => { /* ... */ } },
+    { name: "job-2", run: async () => { /* ... */ } },
+  ], { failFast: true });
+
+await flow.run({});
+```
+
+### Lifecycle Hooks
+
+```ts
+const flow = create("hooked-flow", {
+  hooks: {
+    onFlowStart: (event) => console.log(`Flow ${event.flowName} started`),
+    onStepFailure: (event) => console.error(`Step ${event.stepName} failed:`, event.error),
+  }
+})
+.step("do-something", async () => { /* ... */ });
+
+await flow.run({});
 ```
 
 ## Documentation
